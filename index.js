@@ -1,10 +1,13 @@
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Collection, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Collection, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const mongoose = require('mongoose');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const OWNER_ID = process.env.OWNER_ID || '1208450889246048306';
 const MONGO_URI = process.env.MONGO_URI;
+
+const MAIN_SERVER_ID = '1454813193028374540';
+const SERVER_INVITE_LINK = 'https://discord.gg/z7RUNArBuJ';
 
 const COLORS = {
   DEFAULT: 0x9b59b6,
@@ -39,8 +42,14 @@ const AccessSchema = new mongoose.Schema({
 const LinkSchema = new mongoose.Schema({
   category: { type: String, required: true, unique: true },
   links: {
-    global: String,
-    vng: String
+    free: {
+      global: { url: String, version: String, note: String, status: String },
+      vng: { url: String, version: String, note: String, status: String }
+    },
+    premium: {
+      global: { url: String, version: String, note: String, status: String },
+      vng: { url: String, version: String, note: String, status: String }
+    }
   }
 });
 
@@ -212,17 +221,34 @@ const commands = [
     
   new SlashCommandBuilder()
     .setName('setlinkclone')
-    .setDescription('Tạo và thiết lập link tải cho từng mục riêng')
-    .addStringOption(option => option.setName('category').setDescription('Tên mục muốn tạo (VD: Roblox)').setRequired(true))
-    .addStringOption(option => option
-      .setName('region')
-      .setDescription('Khu vực của link')
-      .setRequired(true)
-      .addChoices(
-        { name: 'Global', value: 'global' },
-        { name: 'VNG', value: 'vng' }
-      ))
-    .addStringOption(option => option.setName('link').setDescription('Đường link tải của mục này').setRequired(true)),
+    .setDescription('Tải và thiết lập link + phiên bản cho từng mục')
+    .addStringOption(opt => opt.setName('category').setDescription('Tên mục (VD: Delta X)').setRequired(true))
+    .addStringOption(opt => opt.setName('type').setDescription('Gói dịch vụ').setRequired(true).addChoices({ name: 'Free', value: 'free' }, { name: 'Premium', value: 'premium' }))
+    .addStringOption(opt => opt.setName('region').setDescription('Khu vực').setRequired(true).addChoices({ name: 'Global', value: 'global' }, { name: 'VNG', value: 'vng' }))
+    .addStringOption(opt => opt.setName('link').setDescription('Đường link tải').setRequired(true))
+    .addStringOption(opt => opt.setName('status').setDescription('Trạng thái').setRequired(true).addChoices(
+      { name: '🟢 Hoạt động', value: 'active' },
+      { name: '🟡 Đang bảo trì / Chờ update', value: 'maintenance' },
+      { name: '🔴 Ngừng hoạt động', value: 'disabled' }
+    ))
+    .addStringOption(opt => opt.setName('version').setDescription('Phiên bản (VD: v2.640)').setRequired(false))
+    .addStringOption(opt => opt.setName('note').setDescription('Ghi chú / Tính năng').setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('setstatus')
+    .setDescription('Cập nhật nhanh trạng thái cho một bản Clone')
+    .addStringOption(opt => opt.setName('category').setDescription('Tên mục (VD: Delta X)').setRequired(true))
+    .addStringOption(opt => opt.setName('type').setDescription('Gói').setRequired(true).addChoices({ name: 'Free', value: 'free' }, { name: 'Premium', value: 'premium' }))
+    .addStringOption(opt => opt.setName('region').setDescription('Khu vực').setRequired(true).addChoices({ name: 'Global', value: 'global' }, { name: 'VNG', value: 'vng' }))
+    .addStringOption(opt => opt.setName('status').setDescription('Trạng thái mới').setRequired(true).addChoices(
+      { name: '🟢 Hoạt động', value: 'active' },
+      { name: '🟡 Đang bảo trì / Chờ update', value: 'maintenance' },
+      { name: '🔴 Ngừng hoạt động', value: 'disabled' }
+    )),
+
+  new SlashCommandBuilder()
+    .setName('setuppanel')
+    .setDescription('Tạo bảng điều khiển lấy link cố định trong channel'),
 
   new SlashCommandBuilder()
     .setName('deletelink')
@@ -230,16 +256,15 @@ const commands = [
     .addStringOption(option => option
       .setName('category')
       .setDescription('Chọn mục muốn xóa')
-      .setRequired(true)
-      .setAutocomplete(true))
+      .setRequired(true))
     .addStringOption(option => option
       .setName('region')
-      .setDescription('Chọn khu vực muốn xóa (mặc định xóa toàn bộ mục)')
+      .setDescription('Chọn khu vực muốn xóa')
       .setRequired(false)
       .addChoices(
         { name: 'Global', value: 'global' },
         { name: 'VNG', value: 'vng' },
-        { name: 'Tất cả (Xóa cả mục)', value: 'all' }
+        { name: 'Tất cả', value: 'all' }
       )),
 
   new SlashCommandBuilder()
@@ -255,23 +280,6 @@ const commands = [
     .setName('removekey')
     .setDescription('Xóa key và thu hồi quyền của member')
     .addStringOption(option => option.setName('key').setDescription('Key cần xóa').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('getclone')
-    .setDescription('Lấy link tải theo mục và khu vực')
-    .addStringOption(option => option
-      .setName('category')
-      .setDescription('Chọn mục muốn lấy link')
-      .setRequired(true)
-      .setAutocomplete(true))
-    .addStringOption(option => option
-      .setName('region')
-      .setDescription('Chọn khu vực')
-      .setRequired(true)
-      .addChoices(
-        { name: 'Global', value: 'global' },
-        { name: 'VNG', value: 'vng' }
-      )),
 
   new SlashCommandBuilder()
     .setName('help')
@@ -361,27 +369,31 @@ async function getValidAccessKey(userId) {
 }
 
 client.on('interactionCreate', async interaction => {
-  if (interaction.isAutocomplete()) {
-    if (interaction.commandName !== 'deletelink' && interaction.commandName !== 'getclone') return;
-
-    const focusedValue = interaction.options.getFocused().toLowerCase();
-    const allLinks = await LinkModel.find({});
-    const linkCategories = allLinks
-      .filter(item => item.category.toLowerCase().includes(focusedValue))
-      .slice(0, 25)
-      .map(item => ({
-        name: item.category,
-        value: item.category
-      }));
-
-    return await interaction.respond(linkCategories);
+  if (!interaction.guildId) {
+    return await interaction.reply({
+      embeds: [createBotEmbed({
+        title: '⛔ KHÔNG THỂ SỬ DỤNG TRONG DM',
+        description: `Vui lòng tham gia **Server Chính Thức** để sử dụng tính năng!\n\n👉 [**[ BẤM VÀO ĐÂY ĐỂ VÀO SERVER ]**](${SERVER_INVITE_LINK})`,
+        color: COLORS.ERROR
+      })],
+      ephemeral: true
+    });
   }
 
-  if (!interaction.isChatInputCommand()) return;
+  if (interaction.guildId !== MAIN_SERVER_ID) {
+    return await interaction.reply({
+      embeds: [createBotEmbed({
+        title: '🏰 MÁY CHỦ BẢO HỘ',
+        description: `Bot chỉ hỗ trợ hoạt động tại **Server Chính Thức (Nhà Của Bot)**.\n\n👉 [**[ BẤM VÀO ĐÂY ĐỂ VỀ SERVER NHÀ ]**](${SERVER_INVITE_LINK})`,
+        color: COLORS.ERROR
+      })],
+      ephemeral: true
+    });
+  }
 
   const userId = interaction.user.id;
   const userLocale = interaction.locale || 'vi';
-  
+
   if (userId !== OWNER_ID) {
     const now = Date.now();
     const lastInteractionAt = commandCooldowns.get(userId);
@@ -406,294 +418,398 @@ client.on('interactionCreate', async interaction => {
   }
 
   await rememberUser(interaction.user.id);
-  const { commandName } = interaction;
 
-  if (commandName === 'status') {
-    const userData = await getValidAccessKey(interaction.user.id);
+  if (interaction.isChatInputCommand()) {
+    const { commandName } = interaction;
 
-    if (!userData) {
+    if (commandName === 'setuppanel') {
+      if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
+
+      const panelEmbed = createBotEmbed({
+        title: '🎮 HỆ THỐNG LẤY LINK CLONE / HACK ROBLOX',
+        description: 'Vui lòng chọn gói phiên bản bạn muốn trải nghiệm bên dưới:',
+        color: COLORS.DEFAULT
+      });
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_type_free').setLabel('🎁 Bản FREE').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_type_premium').setLabel('👑 Bản PREMIUM (Cần Key)').setStyle(ButtonStyle.Success)
+      );
+
+      await interaction.channel.send({ embeds: [panelEmbed], components: [row] });
+      return await interaction.reply({ content: '✅ Đã tạo Panel thành công!', ephemeral: true });
+    }
+
+    if (commandName === 'setstatus') {
+      if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
+
+      const category = interaction.options.getString('category').trim();
+      const type = interaction.options.getString('type');
+      const region = interaction.options.getString('region');
+      const status = interaction.options.getString('status');
+
+      const linkDoc = await LinkModel.findOne({ category });
+      if (!linkDoc || !linkDoc.links?.[type]?.[region]?.url) {
+        return await interaction.reply({ content: `❌ Không tìm thấy bản **${category} (${type.toUpperCase()} -${region.toUpperCase()})** trong hệ thống!`, ephemeral: true });
+      }
+
+      linkDoc.links[type][region].status = status;
+      await linkDoc.save();
+
+      const statusTextMap = { active: '🟢 Hoạt động', maintenance: '🟡 Đang bảo trì', disabled: '🔴 Ngừng hoạt động' };
+
       return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '📊 Trạng Thái Tài Khoản',
-            description: 'Bạn chưa kích hoạt key hoặc thời hạn đã hết. Hãy nhập key bằng lệnh `/redeemkey`!',
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
+        embeds: [createBotEmbed({
+          title: '⚡ Cập Nhật Trạng Thái Thành Công',
+          fields: [
+            { name: 'Mục', value: category, inline: true },
+            { name: 'Loại', value: `${type.toUpperCase()} -${region.toUpperCase()}`, inline: true },
+            { name: 'Trạng thái mới', value: `\`${statusTextMap[status]}\``, inline: false }
+          ],
+          color: COLORS.SUCCESS
+        })],
         ephemeral: true
       });
     }
 
-    if (userData.expiresAt === -1) {
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '📊 Trạng Thái Tài Khoản',
-            description: 'Thời hạn sử dụng bot của bạn là **Vĩnh viễn**!',
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.SUCCESS
-          })
-        ],
-        ephemeral: true
-      });
-    }
+    if (commandName === 'status') {
+      const userData = await getValidAccessKey(interaction.user.id);
 
-    return await interaction.reply({
-      embeds: [
-        createBotEmbed({
-          title: '📊 Trạng Thái Tài Khoản',
-          description: `Thời hạn sử dụng bot còn lại là ${formatExpiry(userData.expiresAt)}. Bạn chỉ cần nhập 1 key mới ở lệnh /redeemkey có thể cộng dồn thêm thời hạn!`,
-          user: interaction.user,
-          locale: userLocale,
-          color: COLORS.MEMBER
-        })
-      ],
-      ephemeral: true
-    });
-  }
-
-  if (commandName === 'help') {
-    const helpEmbed = createBotEmbed({
-      title: '📖 Hướng dẫn sử dụng hệ thống',
-      description: 'Dưới đây là các lệnh sẵn có trong bot.',
-      user: interaction.user,
-      locale: userLocale,
-      color: COLORS.MEMBER,
-      fields: [
-        {
-          name: '👥 Dành cho Member',
-          value: [
-            '`/getclone category:<mục> region:<Global/VNG>` — Lấy đường dẫn tải clone',
-            '`/redeemkey key:<mã-key>` — Nhập key kích hoạt.',
-            '`/status` — Kiểm tra thời hạn sử dụng bot còn lại.'
-          ].join('\n')
-        },
-        {
-          name: '🛠️ Dành cho Admin',
-          value: [
-            '`/setlinkclone category:<mục> region:<Global/VNG> link:<URL>` — Cập nhật link.',
-            '`/deletelink category:<mục> region:<khu-vực>` — Xóa link.',
-            '`/createkey duration:<thời-hạn> target_user:<member>` — Tạo key kích hoạt.'
-          ].join('\n')
-        },
-        {
-          name: '👑 Dành cho Owner',
-          value: [
-            '`/setadmin action:<Add/Remove> user:<member>` — Thêm hoặc xóa Admin.',
-            '`/removekey key:<mã-key>` — Xóa vĩnh viễn key và thu hồi quyền.',
-            '`/notification message:<nội-dung>` — Gửi tin nhắn hàng loạt qua DM.'
-          ].join('\n')
-        }
-      ]
-    });
-
-    return await interaction.reply({
-      embeds: [helpEmbed],
-      ephemeral: false
-    });
-  }
-
-  if (commandName === 'notification') {
-    if (interaction.user.id !== OWNER_ID) {
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '❌ Không đủ thẩm quyền',
-            description: 'Chỉ Chủ sở hữu Bot (Owner) mới có quyền dùng lệnh này!',
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
-        ephemeral: true
-      });
-    }
-
-    const message = interaction.options.getString('message', true).trim();
-    await interaction.deferReply({ ephemeral: true });
-
-    const allUsers = await UserModel.find({});
-    let successCount = 0;
-    let failedCount = 0;
-
-    for (const doc of allUsers) {
-      try {
-        const user = await client.users.fetch(doc.userId);
-        await user.send({
+      if (!userData) {
+        return await interaction.reply({
           embeds: [
             createBotEmbed({
-              title: '👑 Thông Báo Từ Owner',
-              description: message,
-              user,
+              title: '📊 Trạng Thái Tài Khoản',
+              description: 'Bạn chưa kích hoạt key hoặc thời hạn đã hết. Hãy nhập key bằng lệnh `/redeemkey`!',
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.ERROR
+            })
+          ],
+          ephemeral: true
+        });
+      }
+
+      if (userData.expiresAt === -1) {
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '📊 Trạng Thái Tài Khoản',
+              description: 'Thời hạn sử dụng bot của bạn là **Vĩnh viễn**!',
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.SUCCESS
+            })
+          ],
+          ephemeral: true
+        });
+      }
+
+      return await interaction.reply({
+        embeds: [
+          createBotEmbed({
+            title: '📊 Trạng Thái Tài Khoản',
+            description: `Thời hạn sử dụng bot còn lại là ${formatExpiry(userData.expiresAt)}. Bạn chỉ cần nhập 1 key mới ở lệnh /redeemkey có thể cộng dồn thêm thời hạn!`,
+            user: interaction.user,
+            locale: userLocale,
+            color: COLORS.MEMBER
+          })
+        ],
+        ephemeral: true
+      });
+    }
+
+    if (commandName === 'help') {
+      const helpEmbed = createBotEmbed({
+        title: '📖 Hướng dẫn sử dụng hệ thống',
+        description: 'Dưới đây là các lệnh sẵn có trong bot.',
+        user: interaction.user,
+        locale: userLocale,
+        color: COLORS.MEMBER,
+        fields: [
+          {
+            name: '👥 Dành cho Member',
+            value: [
+              '`/redeemkey key:<mã-key>` — Nhập key kích hoạt.',
+              '`/status` — Kiểm tra thời hạn sử dụng bot còn lại.'
+            ].join('\n')
+          },
+          {
+            name: '🛠️ Dành cho Admin',
+            value: [
+              '`/setuppanel` — Tạo bảng điều khiển lấy link.',
+              '`/setlinkclone category:<mục> type:<free/premium> region:<Global/VNG> link:<URL> status:<trạng-thái>` — Cập nhật link.',
+              '`/setstatus category:<mục> type:<free/premium> region:<Global/VNG> status:<trạng-thái>` — Đổi nhanh trạng thái.',
+              '`/deletelink category:<mục> region:<khu-vực>` — Xóa link.',
+              '`/createkey duration:<thời-hạn> target_user:<member>` — Tạo key kích hoạt.'
+            ].join('\n')
+          },
+          {
+            name: '👑 Dành cho Owner',
+            value: [
+              '`/setadmin action:<Add/Remove> user:<member>` — Thêm hoặc xóa Admin.',
+              '`/removekey key:<mã-key>` — Xóa vĩnh viễn key và thu hồi quyền.',
+              '`/notification message:<nội-dung>` — Gửi tin nhắn hàng loạt qua DM.'
+            ].join('\n')
+          }
+        ]
+      });
+
+      return await interaction.reply({
+        embeds: [helpEmbed],
+        ephemeral: false
+      });
+    }
+
+    if (commandName === 'notification') {
+      if (interaction.user.id !== OWNER_ID) {
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '❌ Không đủ thẩm quyền',
+              description: 'Chỉ Chủ sở hữu Bot (Owner) mới có quyền dùng lệnh này!',
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.ERROR
+            })
+          ],
+          ephemeral: true
+        });
+      }
+
+      const message = interaction.options.getString('message', true).trim();
+      await interaction.deferReply({ ephemeral: true });
+
+      const allUsers = await UserModel.find({});
+      let successCount = 0;
+      let failedCount = 0;
+
+      for (const doc of allUsers) {
+        try {
+          const user = await client.users.fetch(doc.userId);
+          await user.send({
+            embeds: [
+              createBotEmbed({
+                title: '👑 Thông Báo Từ Owner',
+                description: message,
+                user,
+                locale: userLocale,
+                color: COLORS.OWNER
+              })
+            ]
+          });
+          successCount += 1;
+        } catch (_error) {
+          failedCount += 1;
+        }
+      }
+
+      return await interaction.editReply({
+        embeds: [
+          createBotEmbed({
+            title: '📢 Kết quả gửi thông báo',
+            user: interaction.user,
+            locale: userLocale,
+            fields: [
+              { name: '✅ Gửi thành công', value: `${successCount} member`, inline: true },
+              { name: '❌ Gửi thất bại', value: `${failedCount} member`, inline: true }
+            ],
+            color: COLORS.SUCCESS
+          })
+        ]
+      });
+    }
+
+    if (commandName === 'setadmin') {
+      if (interaction.user.id !== OWNER_ID) {
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '❌ Lỗi phân quyền',
+              description: 'Chỉ Owner mới có thẩm quyền quản trị danh sách Admin.',
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.ERROR
+            })
+          ],
+          ephemeral: true
+        });
+      }
+
+      const action = interaction.options.getString('action', true);
+      const targetUser = interaction.options.getUser('user', true);
+
+      if (action === 'add') {
+        await AdminModel.updateOne({ userId: targetUser.id }, { userId: targetUser.id }, { upsert: true });
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '✅ Thêm Admin thành công',
+              description: `Đã cấp quyền Admin cho: **${targetUser.tag}**`,
+              user: interaction.user,
               locale: userLocale,
               color: COLORS.OWNER
             })
-          ]
+          ],
+          ephemeral: true
         });
-        successCount += 1;
-      } catch (_error) {
-        failedCount += 1;
+      } else if (action === 'remove') {
+        await AdminModel.deleteOne({ userId: targetUser.id });
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '✅ Thu hồi Admin thành công',
+              description: `Đã xóa quyền Admin của: **${targetUser.tag}**`,
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.OWNER
+            })
+          ],
+          ephemeral: true
+        });
       }
     }
 
-    return await interaction.editReply({
-      embeds: [
-        createBotEmbed({
-          title: '📢 Kết quả gửi thông báo',
-          user: interaction.user,
-          locale: userLocale,
-          fields: [
-            { name: '✅ Gửi thành công', value: `${successCount} member`, inline: true },
-            { name: '❌ Gửi thất bại', value: `${failedCount} member`, inline: true }
+    if (commandName === 'setlinkclone') {
+      if (!(await isBotAdmin(interaction.user.id))) {
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '❌ Quyền truy cập bị từ chối',
+              description: 'Bạn không có quyền thực hiện thiết lập link.',
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.ERROR
+            })
           ],
-          color: COLORS.SUCCESS
-        })
-      ]
-    });
-  }
+          ephemeral: true
+        });
+      }
 
-  if (commandName === 'setadmin') {
-    if (interaction.user.id !== OWNER_ID) {
-      return await interaction.reply({
+      const category = interaction.options.getString('category').trim();
+      const type = interaction.options.getString('type');
+      const region = interaction.options.getString('region');
+      const link = interaction.options.getString('link').trim();
+      const status = interaction.options.getString('status');
+      const version = interaction.options.getString('version') || 'v1.0';
+      const note = interaction.options.getString('note') || 'Không có ghi chú thêm';
+
+      let linkDoc = await LinkModel.findOne({ category });
+      if (!linkDoc) linkDoc = new LinkModel({ category, links: { free: {}, premium: {} } });
+
+      if (!linkDoc.links[type]) linkDoc.links[type] = {};
+      linkDoc.links[type][region] = { url: link, version, note, status };
+
+      await linkDoc.save();
+
+      await interaction.reply({
         embeds: [
           createBotEmbed({
-            title: '❌ Lỗi phân quyền',
-            description: 'Chỉ Owner mới có thẩm quyền quản trị danh sách Admin.',
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
+            title: '✅ Thêm/Cập Nhật Link Thành Công',
+            fields: [
+              { name: 'Mục', value: category, inline: true },
+              { name: 'Gói', value: type.toUpperCase(), inline: true },
+              { name: 'Khu vực', value: region.toUpperCase(), inline: true },
+              { name: 'Phiên bản', value: version, inline: true },
+              { name: 'Ghi chú', value: note, inline: true },
+              { name: 'Link Tải', value: link }
+            ],
+            color: COLORS.ADMIN
           })
         ],
         ephemeral: true
       });
-    }
 
-    const action = interaction.options.getString('action', true);
-    const targetUser = interaction.options.getUser('user', true);
-
-    if (action === 'add') {
-      await AdminModel.updateOne({ userId: targetUser.id }, { userId: targetUser.id }, { upsert: true });
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '✅ Thêm Admin thành công',
-            description: `Đã cấp quyền Admin cho: **${targetUser.tag}**`,
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.OWNER
-          })
+      const allUsers = await UserModel.find({});
+      const notifyEmbed = createBotEmbed({
+        title: '🚀 THÔNG BÁO CẬP NHẬT PHIÊN BẢN MỚI',
+        fields: [
+          { name: '📌 Bản Clone', value: `\`${category}\``, inline: true },
+          { name: '📦 Gói dịch vụ', value: `\`${type.toUpperCase()}\``, inline: true },
+          { name: '🌐 Máy chủ', value: `\`${region.toUpperCase()}\``, inline: true },
+          { name: '🏷️ Phiên bản', value: `\`${version}\``, inline: true },
+          { name: '📝 Chi tiết cập nhật', value: `\`\`\`${note}\`\`\`` }
         ],
-        ephemeral: true
+        color: COLORS.SUCCESS
       });
-    } else if (action === 'remove') {
-      await AdminModel.deleteOne({ userId: targetUser.id });
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '✅ Thu hồi Admin thành công',
-            description: `Đã xóa quyền Admin của: **${targetUser.tag}**`,
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.OWNER
-          })
-        ],
-        ephemeral: true
-      });
-    }
-  }
 
-  if (commandName === 'setlinkclone') {
-    if (!(await isBotAdmin(interaction.user.id))) {
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '❌ Quyền truy cập bị từ chối',
-            description: 'Bạn không có quyền thực hiện thiết lập link.',
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
-        ephemeral: true
-      });
+      for (const u of allUsers) {
+        try {
+          const userObj = await client.users.fetch(u.userId);
+          if (userObj) {
+            await userObj.send({ content: '🔔 **Hệ thống có bản cập nhật mới!**', embeds: [notifyEmbed] });
+          }
+        } catch (e) {}
+      }
     }
 
-    const categoryName = interaction.options.getString('category').trim();
-    const region = interaction.options.getString('region');
-    const linkUrl = interaction.options.getString('link').trim();
-
-    let linkDoc = await LinkModel.findOne({ category: categoryName });
-    if (!linkDoc) {
-      linkDoc = new LinkModel({ category: categoryName, links: {} });
-    }
-
-    linkDoc.links[region] = linkUrl;
-    await linkDoc.save();
-
-    await interaction.reply({
-      embeds: [
-        createBotEmbed({
-          title: '✅ Thiết lập Link thành công',
-          user: interaction.user,
-          locale: userLocale,
-          fields: [
-            { name: 'Mục', value: categoryName, inline: true },
-            { name: 'Khu vực', value: region === 'global' ? 'Global' : 'VNG', inline: true },
-            { name: 'Link Tải', value: linkUrl }
+    else if (commandName === 'deletelink') {
+      if (!(await isBotAdmin(interaction.user.id))) {
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '❌ Từ chối truy cập',
+              description: 'Bạn không có quyền quản lý link.',
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.ERROR
+            })
           ],
-          color: COLORS.ADMIN
-        })
-      ],
-      ephemeral: true
-    });
-  }
+          ephemeral: true
+        });
+      }
 
-  else if (commandName === 'deletelink') {
-    if (!(await isBotAdmin(interaction.user.id))) {
+      const categoryName = interaction.options.getString('category').trim();
+      const region = interaction.options.getString('region') || 'all';
+
+      const linkDoc = await LinkModel.findOne({ category: categoryName });
+
+      if (!linkDoc) {
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '❌ Thao tác thất bại',
+              description: `Không tìm thấy mục \`${categoryName}\` trong dữ liệu!`,
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.ERROR
+            })
+          ],
+          ephemeral: true
+        });
+      }
+
+      if (region === 'all') {
+        await LinkModel.deleteOne({ category: categoryName });
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '✅ Đã xóa danh mục link',
+              description: `Đã xóa toàn bộ mục \`${categoryName}\` khỏi cơ sở dữ liệu!`,
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.ADMIN
+            })
+          ],
+          ephemeral: true
+        });
+      }
+
+      if (linkDoc.links) {
+        if (linkDoc.links.free) {
+          delete linkDoc.links.free[region];
+        }
+        if (linkDoc.links.premium) {
+          delete linkDoc.links.premium[region];
+        }
+        await linkDoc.save();
+      }
+
       return await interaction.reply({
         embeds: [
           createBotEmbed({
-            title: '❌ Từ chối truy cập',
-            description: 'Bạn không có quyền quản lý link.',
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
-        ephemeral: true
-      });
-    }
-
-    const categoryName = interaction.options.getString('category').trim();
-    const region = interaction.options.getString('region') || 'all';
-
-    const linkDoc = await LinkModel.findOne({ category: categoryName });
-
-    if (!linkDoc) {
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '❌ Thao tác thất bại',
-            description: `Không tìm thấy mục \`${categoryName}\` trong dữ liệu!`,
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
-        ephemeral: true
-      });
-    }
-
-    if (region === 'all') {
-      await LinkModel.deleteOne({ category: categoryName });
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '✅ Đã xóa danh mục link',
-            description: `Đã xóa toàn bộ mục \`${categoryName}\` khỏi cơ sở dữ liệu!`,
+            title: '✅ Đã xóa link khu vực',
+            description: `Đã xóa link \`${region === 'global' ? 'Global' : 'VNG'}\` của mục \`${categoryName}\`!`,
             user: interaction.user,
             locale: userLocale,
             color: COLORS.ADMIN
@@ -703,339 +819,359 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    if (!linkDoc.links || !linkDoc.links[region]) {
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '❌ Thao tác thất bại',
-            description: `Mục \`${categoryName}\` không có link cho khu vực \`${region === 'global' ? 'Global' : 'VNG'}\`!`,
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
-        ephemeral: true
-      });
-    }
-
-    linkDoc.links[region] = undefined;
-    if (!linkDoc.links.global && !linkDoc.links.vng) {
-      await LinkModel.deleteOne({ category: categoryName });
-    } else {
-      await linkDoc.save();
-    }
-
-    return await interaction.reply({
-      embeds: [
-        createBotEmbed({
-          title: '✅ Đã xóa link khu vực',
-          description: `Đã xóa link \`${region === 'global' ? 'Global' : 'VNG'}\` của mục \`${categoryName}\`!`,
-          user: interaction.user,
-          locale: userLocale,
-          color: COLORS.ADMIN
-        })
-      ],
-      ephemeral: true
-    });
-  }
-
-  else if (commandName === 'createkey') {
-    if (!(await isBotAdmin(interaction.user.id))) {
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '❌ Từ chối truy cập',
-            description: 'Bạn không có thẩm quyền tạo key!',
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
-        ephemeral: true
-      });
-    }
-
-    const duration = interaction.options.getString('duration');
-    const targetUser = interaction.options.getUser('target_user');
-    await interaction.deferReply({ ephemeral: true });
-    
-    let generatedKey = generateRandomKey();
-    while (await KeyModel.findOne({ key: generatedKey })) { 
-      generatedKey = generateRandomKey(); 
-    }
-
-    const durationMs = getDurationMilliseconds(duration);
-    await KeyModel.create({
-      key: generatedKey,
-      durationMs,
-      activatedAt: null,
-      expiresAt: null
-    });
-
-    const durationText = formatDuration(durationMs);
-    let targetUserDetails = 'Không gửi cho member cụ thể';
-    let isDirectSent = false;
-
-    if (targetUser) {
-      try {
-        const fetchedTargetUser = await client.users.fetch(targetUser.id);
-        await fetchedTargetUser.send({
+    else if (commandName === 'createkey') {
+      if (!(await isBotAdmin(interaction.user.id))) {
+        return await interaction.reply({
           embeds: [
             createBotEmbed({
-              title: '🔑 Nhận Mã Key Mới',
-              user: fetchedTargetUser,
+              title: '❌ Từ chối truy cập',
+              description: 'Bạn không có thẩm quyền tạo key!',
+              user: interaction.user,
               locale: userLocale,
-              fields: [
-                { name: 'Mã Key', value: `\`${generatedKey}\`` },
-                { name: 'Thời hạn', value: durationText },
-                { name: 'Hướng dẫn', value: `Sử dụng lệnh \`/redeemkey key:${generatedKey}\` để mở khóa bot.` }
-              ],
-              color: COLORS.MEMBER
+              color: COLORS.ERROR
             })
-          ]
+          ],
+          ephemeral: true
         });
-        isDirectSent = true;
-        targetUserDetails = `Đã gửi cho ${fetchedTargetUser.tag} (ID:${fetchedTargetUser.id})`;
-      } catch (error) {
-        targetUserDetails = `Gửi thất bại cho ${targetUser.tag} (ID:${targetUser.id})`;
       }
-    }
 
-    await interaction.editReply({
-      embeds: [
+      const duration = interaction.options.getString('duration');
+      const targetUser = interaction.options.getUser('target_user');
+      await interaction.deferReply({ ephemeral: true });
+      
+      let generatedKey = generateRandomKey();
+      while (await KeyModel.findOne({ key: generatedKey })) { 
+        generatedKey = generateRandomKey(); 
+      }
+
+      const durationMs = getDurationMilliseconds(duration);
+      await KeyModel.create({
+        key: generatedKey,
+        durationMs,
+        activatedAt: null,
+        expiresAt: null
+      });
+
+      const durationText = formatDuration(durationMs);
+      let targetUserDetails = 'Không gửi cho member cụ thể';
+      let isDirectSent = false;
+
+      if (targetUser) {
+        try {
+          const fetchedTargetUser = await client.users.fetch(targetUser.id);
+          await fetchedTargetUser.send({
+            embeds: [
+              createBotEmbed({
+                title: '🔑 Nhận Mã Key Mới',
+                user: fetchedTargetUser,
+                locale: userLocale,
+                fields: [
+                  { name: 'Mã Key', value: `\`${generatedKey}\`` },
+                  { name: 'Thời hạn', value: durationText },
+                  { name: 'Hướng dẫn', value: `Sử dụng lệnh \`/redeemkey key:${generatedKey}\` để mở khóa bot.` }
+                ],
+                color: COLORS.MEMBER
+              })
+            ]
+          });
+          isDirectSent = true;
+          targetUserDetails = `Đã gửi cho ${fetchedTargetUser.tag} (ID:${fetchedTargetUser.id})`;
+        } catch (error) {
+          targetUserDetails = `Gửi thất bại cho ${targetUser.tag} (ID:${targetUser.id})`;
+        }
+      }
+
+      await interaction.editReply({
+        embeds: [
+          createBotEmbed({
+            title: '🔑 Tạo Key Thành Công',
+            user: interaction.user,
+            locale: userLocale,
+            fields: [
+              { name: 'Mã Key', value: `\`${generatedKey}\``, inline: true },
+              { name: 'Thời hạn', value: durationText, inline: true },
+              { name: 'Trạng thái DM', value: isDirectSent ? '✅ Đã gửi DM' : (targetUser ? '❌ Lỗi gửi DM' : 'Không gửi') }
+            ],
+            color: COLORS.ADMIN
+          })
+        ]
+      });
+
+      await notifyOwner(
         createBotEmbed({
-          title: '🔑 Tạo Key Thành Công',
+          title: '🔑 Nhật Ký Tạo Key',
           user: interaction.user,
           locale: userLocale,
           fields: [
-            { name: 'Mã Key', value: `\`${generatedKey}\``, inline: true },
-            { name: 'Thời hạn', value: durationText, inline: true },
-            { name: 'Trạng thái DM', value: isDirectSent ? '✅ Đã gửi DM' : (targetUser ? '❌ Lỗi gửi DM' : 'Không gửi') }
+            { name: 'Người tạo', value: `${interaction.user.tag} (${interaction.user.id})` },
+            { name: 'Key', value: `\`${generatedKey}\`` },
+            { name: 'Thời hạn', value: durationText },
+            { name: 'Đối tượng nhận', value: targetUserDetails }
           ],
           color: COLORS.ADMIN
         })
-      ]
-    });
-
-    await notifyOwner(
-      createBotEmbed({
-        title: '🔑 Nhật Ký Tạo Key',
-        user: interaction.user,
-        locale: userLocale,
-        fields: [
-          { name: 'Người tạo', value: `${interaction.user.tag} (${interaction.user.id})` },
-          { name: 'Key', value: `\`${generatedKey}\`` },
-          { name: 'Thời hạn', value: durationText },
-          { name: 'Đối tượng nhận', value: targetUserDetails }
-        ],
-        color: COLORS.ADMIN
-      })
-    );
-  }
-
-  else if (commandName === 'removekey') {
-    if (interaction.user.id !== OWNER_ID) {
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '❌ Thất bại',
-            description: 'Chỉ Owner mới có quyền thu hồi/xóa key!',
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
-        ephemeral: true
-      });
+      );
     }
 
-    const userKey = interaction.options.getString('key', true).trim();
-    const keyData = await KeyModel.findOne({ key: userKey });
-
-    if (!keyData) {
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '❌ Không tìm thấy',
-            description: `Key \`${userKey}\` không tồn tại trên hệ thống.`,
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
-        ephemeral: true
-      });
-    }
-
-    await KeyModel.deleteOne({ key: userKey });
-
-    return await interaction.reply({
-      embeds: [
-        createBotEmbed({
-          title: '✅ Đã Xóa Key',
-          description: `Đã xóa vĩnh viễn key chưa sử dụng \`${userKey}\`.`,
-          user: interaction.user,
-          locale: userLocale,
-          color: COLORS.OWNER
-        })
-      ],
-      ephemeral: true
-    });
-  }
-
-  else if (commandName === 'getclone') {
-    if (!(await getValidAccessKey(interaction.user.id))) {
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '🔒 Truy Cập Bị Khóa',
-            description: 'Bạn chưa kích hoạt key hoặc key đã hết hạn. Hãy nhập key bằng lệnh `/redeemkey`!',
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
-        ephemeral: true
-      });
-    }
-
-    const categoryName = interaction.options.getString('category', true).trim();
-    const region = interaction.options.getString('region', true);
-
-    const linkDoc = await LinkModel.findOne({ category: categoryName });
-    const linkUrl = linkDoc?.links?.[region];
-
-    if (!linkUrl) {
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '❌ Không tìm thấy Link',
-            description: `Hiện chưa có đường dẫn cho mục \`${categoryName}\` (${region.toUpperCase()}).`,
-            user: interaction.user,
-            locale: userLocale,
-            color: COLORS.ERROR
-          })
-        ],
-        ephemeral: true
-      });
-    }
-
-    return await interaction.reply({
-      embeds: [
-        createBotEmbed({
-          title: '🔗 Lấy Link Thành Công',
-          user: interaction.user,
-          locale: userLocale,
-          fields: [
-            { name: 'Mục', value: categoryName, inline: true },
-            { name: 'Khu vực', value: region === 'global' ? 'Global' : 'VNG', inline: true },
-            { name: 'Đường dẫn tải', value: linkUrl }
+    else if (commandName === 'removekey') {
+      if (interaction.user.id !== OWNER_ID) {
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '❌ Thất bại',
+              description: 'Chỉ Owner mới có quyền thu hồi/xóa key!',
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.ERROR
+            })
           ],
-          color: COLORS.MEMBER
-        })
-      ],
-      ephemeral: true
-    });
-  }
+          ephemeral: true
+        });
+      }
 
-  else if (commandName === 'redeemkey') {
-    const userKey = interaction.options.getString('key').trim();
-    const keyData = await KeyModel.findOne({ key: userKey });
+      const userKey = interaction.options.getString('key', true).trim();
+      const keyData = await KeyModel.findOne({ key: userKey });
 
-    if (!keyData) {
+      if (!keyData) {
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '❌ Không tìm thấy',
+              description: `Key \`${userKey}\` không tồn tại trên hệ thống.`,
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.ERROR
+            })
+          ],
+          ephemeral: true
+        });
+      }
+
+      await KeyModel.deleteOne({ key: userKey });
+
       return await interaction.reply({
         embeds: [
           createBotEmbed({
-            title: '❌ Key Không Hợp Lệ',
-            description: `Mã key \`${userKey}\` không tồn tại hoặc đã nhập sai!`,
+            title: '✅ Đã Xóa Key',
+            description: `Đã xóa vĩnh viễn key chưa sử dụng \`${userKey}\`.`,
             user: interaction.user,
             locale: userLocale,
-            color: COLORS.ERROR
+            color: COLORS.OWNER
           })
         ],
         ephemeral: true
       });
     }
 
-    const now = Date.now();
-    let currentUserData = await AccessModel.findOne({ userId: interaction.user.id });
-    let isExtension = false;
-    let newExpiresAt = now;
+    else if (commandName === 'redeemkey') {
+      const userKey = interaction.options.getString('key').trim();
+      const keyData = await KeyModel.findOne({ key: userKey });
 
-    if (keyData.durationMs === -1) {
-      newExpiresAt = -1;
-    } else {
-      if (currentUserData && currentUserData.expiresAt > now && currentUserData.expiresAt !== -1) {
-        newExpiresAt = currentUserData.expiresAt + keyData.durationMs;
-        isExtension = true;
-      } else {
-        newExpiresAt = now + keyData.durationMs;
+      if (!keyData) {
+        return await interaction.reply({
+          embeds: [
+            createBotEmbed({
+              title: '❌ Key Không Hợp Lệ',
+              description: `Mã key \`${userKey}\` không tồn tại hoặc đã nhập sai!`,
+              user: interaction.user,
+              locale: userLocale,
+              color: COLORS.ERROR
+            })
+          ],
+          ephemeral: true
+        });
       }
-    }
 
-    await AccessModel.updateOne(
-      { userId: interaction.user.id },
-      {
-        userId: interaction.user.id,
-        expiresAt: newExpiresAt,
-        durationMs: keyData.durationMs,
-        warned24h: false,
-        warned4h: false
-      },
-      { upsert: true }
-    );
+      const now = Date.now();
+      let currentUserData = await AccessModel.findOne({ userId: interaction.user.id });
+      let isExtension = false;
+      let newExpiresAt = now;
 
-    await KeyModel.deleteOne({ key: userKey });
+      if (keyData.durationMs === -1) {
+        newExpiresAt = -1;
+      } else {
+        if (currentUserData && currentUserData.expiresAt > now && currentUserData.expiresAt !== -1) {
+          newExpiresAt = currentUserData.expiresAt + keyData.durationMs;
+          isExtension = true;
+        } else {
+          newExpiresAt = now + keyData.durationMs;
+        }
+      }
 
-    await interaction.reply({
-      embeds: [
+      await AccessModel.updateOne(
+        { userId: interaction.user.id },
+        {
+          userId: interaction.user.id,
+          expiresAt: newExpiresAt,
+          durationMs: keyData.durationMs,
+          warned24h: false,
+          warned4h: false
+        },
+        { upsert: true }
+      );
+
+      await KeyModel.deleteOne({ key: userKey });
+
+      await interaction.reply({
+        embeds: [
+          createBotEmbed({
+            title: '🎉 Kích Hoạt Thành Công',
+            description: `Bạn đã kích hoạt thành công key \`${userKey}\` và mở khóa toàn bộ quyền truy cập!`,
+            user: interaction.user,
+            locale: userLocale,
+            fields: [
+              { name: 'Thời hạn hết hạn', value: formatExpiry(newExpiresAt) }
+            ],
+            color: COLORS.SUCCESS
+          })
+        ],
+        ephemeral: true
+      });
+
+      if (isExtension) {
+        try {
+          await interaction.user.send({
+            embeds: [
+              createBotEmbed({
+                title: '🔄 Thông Báo Gia Hạn',
+                description: `Bạn đã được cộng thêm thời gian sử dụng bot thành công!`,
+                user: interaction.user,
+                locale: userLocale,
+                fields: [
+                  { name: 'Thời hạn hết hạn mới', value: formatExpiry(newExpiresAt) }
+                ],
+                color: COLORS.MEMBER
+              })
+            ]
+          });
+        } catch (_e) {}
+      }
+
+      await notifyOwner(
         createBotEmbed({
-          title: '🎉 Kích Hoạt Thành Công',
-          description: `Bạn đã kích hoạt thành công key \`${userKey}\` và mở khóa toàn bộ quyền truy cập!`,
+          title: '✅ Member Đã Redeem Key',
           user: interaction.user,
           locale: userLocale,
           fields: [
-            { name: 'Thời hạn hết hạn', value: formatExpiry(newExpiresAt) }
+            { name: 'Username', value: interaction.user.tag, inline: true },
+            { name: 'ID Member', value: interaction.user.id, inline: true },
+            { name: 'Key', value: `\`${userKey}\`` },
+            { name: 'Hết hạn', value: formatExpiry(newExpiresAt) }
           ],
           color: COLORS.SUCCESS
         })
-      ],
-      ephemeral: true
-    });
+      );
+    }
+  }
 
-    if (isExtension) {
-      try {
-        await interaction.user.send({
-          embeds: [
-            createBotEmbed({
-              title: '🔄 Thông Báo Gia Hạn',
-              description: `Bạn đã được cộng thêm thời gian sử dụng bot thành công!`,
-              user: interaction.user,
-              locale: userLocale,
-              fields: [
-                { name: 'Thời hạn hết hạn mới', value: formatExpiry(newExpiresAt) }
-              ],
-              color: COLORS.MEMBER
-            })
-          ]
+  if (interaction.isButton()) {
+    const customId = interaction.customId;
+
+    if (customId === 'btn_type_free' || customId === 'btn_type_premium') {
+      const type = customId.replace('btn_type_', '');
+
+      if (type === 'premium' && !(await getValidAccessKey(interaction.user.id))) {
+        return await interaction.reply({
+          embeds: [createBotEmbed({
+            title: '🔒 Truy Cập Bị Khóa',
+            description: 'Bạn chưa kích hoạt key hoặc key đã hết hạn! Dùng `/redeemkey` để kích hoạt.',
+            color: COLORS.ERROR
+          })],
+          ephemeral: true
         });
-      } catch (_e) {}
+      }
+
+      const subEmbed = createBotEmbed({
+        title: `🌐 CHỌN KHU VỰC SỬ DỤNG (${type.toUpperCase()})`,
+        description: 'Vui lòng chọn máy chủ game Roblox của bạn:',
+        color: type === 'premium' ? COLORS.ADMIN : COLORS.MEMBER
+      });
+
+      const regionRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`btn_reg_${type}_global`).setLabel('🌍 Global (Quốc Tế)').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`btn_reg_${type}_vng`).setLabel('🇻🇳 VNG (Việt Nam)').setStyle(ButtonStyle.Success)
+      );
+
+      return await interaction.reply({ embeds: [subEmbed], components: [regionRow], ephemeral: true });
     }
 
-    await notifyOwner(
-      createBotEmbed({
-        title: '✅ Member Đã Redeem Key',
-        user: interaction.user,
-        locale: userLocale,
-        fields: [
-          { name: 'Username', value: interaction.user.tag, inline: true },
-          { name: 'ID Member', value: interaction.user.id, inline: true },
-          { name: 'Key', value: `\`${userKey}\`` },
-          { name: 'Hết hạn', value: formatExpiry(newExpiresAt) }
-        ],
-        color: COLORS.SUCCESS
-      })
-    );
+    if (customId.startsWith('btn_reg_')) {
+      const [, , type, region] = customId.split('_');
+
+      const allLinks = await LinkModel.find({});
+      const filteredLinks = allLinks.filter(item => item.links?.[type]?.[region]?.url);
+
+      if (filteredLinks.length === 0) {
+        return await interaction.reply({
+          content: `❌ Hiện chưa có bản Clone nào khả dụng cho gói **${type.toUpperCase()} -${region.toUpperCase()}**!`,
+          ephemeral: true
+        });
+      }
+
+      const options = filteredLinks.map(item => {
+        const data = item.links[type][region];
+        return {
+          label: `${item.category} [${data.version || 'v1.0'}]`,
+          description: `Phiên bản: ${data.version} •${data.note}`.slice(0, 100),
+          value: `${item.category}|${type}\vert{}${region}`
+        };
+      });
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('select_clone_item')
+        .setPlaceholder(`--- Chọn bản Hack (${region.toUpperCase()}) ---`)
+        .addOptions(options.slice(0, 25));
+
+      return await interaction.reply({
+        content: `👇 Chọn phiên bản **${type.toUpperCase()} (${region.toUpperCase()})** bạn muốn tải:`,
+        components: [new ActionRowBuilder().addComponents(selectMenu)],
+        ephemeral: true
+      });
+    }
+  }
+
+  if (interaction.isStringSelectMenu() && interaction.customId === 'select_clone_item') {
+    const [category, type, region] = interaction.values[0].split('|');
+
+    if (type === 'premium' && !(await getValidAccessKey(interaction.user.id))) {
+      return await interaction.reply({ content: '🔒 Key của bạn đã hết hạn!', ephemeral: true });
+    }
+
+    const linkDoc = await LinkModel.findOne({ category });
+    const itemData = linkDoc?.links?.[type]?.[region];
+
+    if (!itemData || !itemData.url) {
+      return await interaction.reply({ content: '❌ Link này vừa bị gỡ hoặc không tồn tại!', ephemeral: true });
+    }
+
+    const statusMap = {
+      active: { text: '🟢 Đang hoạt động', allowDownload: true },
+      maintenance: { text: '🟡 Đang bảo trì / Chờ update Roblox', allowDownload: false },
+      disabled: { text: '🔴 Ngừng hoạt động', allowDownload: false }
+    };
+
+    const currentStatus = statusMap[itemData.status || 'active'];
+
+    const resultEmbed = createBotEmbed({
+      title: `👑 THÔNG TIN PHIÊN BẢN: ${category.toUpperCase()} (${region.toUpperCase()})`,
+      fields: [
+        { name: '📦 Gói dịch vụ', value: `\`${type.toUpperCase()}\``, inline: true },
+        { name: '🌐 Máy chủ', value: `\`${region.toUpperCase()}\``, inline: true },
+        { name: '📌 Phiên bản', value: `\`${itemData.version || 'Mới nhất'}\``, inline: true },
+        { name: '📊 Trạng thái', value: `\`${currentStatus.text}\``, inline: false },
+        { name: '📝 Ghi chú & Tính năng', value: `\`\`\`${itemData.note || 'Không có ghi chú'}\`\`\`` },
+        { 
+          name: '🔗 Đường dẫn tải xuống', 
+          value: currentStatus.allowDownload 
+            ? `👉 [**[ BẤM VÀO ĐÂY ĐỂ TẢI XUỐNG ]**](${itemData.url})`
+            : `⚠️ *Link tải tạm thời ẩn do bản Hack đang ${currentStatus.text}. Vui lòng chờ Admin cập nhật!*`
+        }
+      ],
+      color: currentStatus.allowDownload ? COLORS.SUCCESS : COLORS.ERROR,
+      user: interaction.user
+    });
+
+    return await interaction.reply({ embeds: [resultEmbed], ephemeral: true });
   }
 });
 
