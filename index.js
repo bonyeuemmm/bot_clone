@@ -1134,18 +1134,22 @@ client.on('interactionCreate', async interaction => {
       const currentStatus = statusMap[itemData.status || 'active'];
 
       const resultEmbed = createBotEmbed({
-        title: `👑 THÔNG TIN PHIÊN BẢN: ${category.toUpperCase()} (${region.toUpperCase()})`,
+        title: `👑 PHIÊN BẢN PREMIUM: ${category.toUpperCase()} (${region.toUpperCase()})`,
         fields: [
           { name: '📦 Gói dịch vụ', value: '`PREMIUM`', inline: true },
           { name: '🌐 Máy chủ', value: `\`${region.toUpperCase()}\``, inline: true },
           { name: '📌 Phiên bản', value: `\`${itemData.version || 'Mới nhất'}\``, inline: true },
           { name: '📊 Trạng thái', value: `\`${currentStatus.text}\``, inline: false },
-          { name: '📝 Ghi chú & Tính năng', value: `\`\`\`${itemData.note || 'Không có ghi chú'}\`\`\`` },
           { 
             name: '🔗 Đường dẫn tải xuống', 
             value: currentStatus.allowDownload 
-              ? `👉 [**[ BẤM VÀO ĐÂY ĐỂ TẢI XUỐNG ]**](${itemData.url})`
+              ? `${itemData.url}`
               : `⚠️ *Link tải tạm thời ẩn do bản Hack đang ${currentStatus.text}. Vui lòng chờ Admin cập nhật!*`
+          },
+          { name: '📝 Ghi chú & Tính năng', value: `\`\`\`${itemData.note || 'Không có ghi chú'}\`\`\`` },
+          { 
+            name: '⚠️ LƯU Ý QUAN TRỌNG', 
+            value: '```diff\n- CẤM CHIA SẺ LINK CHO NGƯỜI KHÁC!\n- Nếu phát hiện chia sẻ link hoặc mã tải ra ngoài, Admin sẽ BLOCK tài khoản và CẤM bạn không thể sử dụng bot được nữa!\n```' 
           }
         ],
         color: currentStatus.allowDownload ? COLORS.SUCCESS : COLORS.ERROR,
