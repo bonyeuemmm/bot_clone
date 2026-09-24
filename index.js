@@ -355,7 +355,7 @@ client.on('interactionCreate', async interaction => {
       const options = allLinks.map(item => ({
         label: item.category,
         description: `Mục: ${item.category}`,
-        value: item.category
+        value: JSON.stringify({ cat: item.category })
       }));
 
       const selectMenu = new StringSelectMenuBuilder()
@@ -393,12 +393,12 @@ client.on('interactionCreate', async interaction => {
         {
           label: '🔥 [XÓA TẤT CẢ PHIÊN BẢN CLONE]',
           description: 'Xóa toàn bộ tất cả bản Clone và khu vực khỏi hệ thống!',
-          value: 'DELETE_ALL_DATA'
+          value: JSON.stringify({ action: 'DELETE_ALL' })
         },
         ...allLinks.map(item => ({
           label: `📌 ${item.category}`,
-          description: `Chọn để quản lý xóa khu vực của ${item.category}`,
-          value: item.category
+          description: `Chọn để xóa toàn bộ dữ liệu của ${item.category}`,
+          value: JSON.stringify({ action: 'DELETE_ONE', cat: item.category })
         }))
       ];
 
@@ -897,7 +897,7 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      // ĐÃ SỬA: Đổi separator từ \vert{} thành |
+      // ĐÂY LÀ PHƯƠNG ÁN 2: Mã hóa giá trị thành chuỗi JSON
       const options = filteredLinks.map(item => {
         const data = item.links.premium[region];
         const vText = data.version || 'v1.0';
@@ -905,7 +905,7 @@ client.on('interactionCreate', async interaction => {
         return {
           label: `${item.category} [${vText}]`,
           description: `Phiên bản: ${vText} -${nText}`.slice(0, 100),
-          value: `${item.category}\vert{}premium\vert{}${region}`
+          value: JSON.stringify({ cat: item.category, reg: region })
         };
       });
 
@@ -934,9 +934,8 @@ client.on('interactionCreate', async interaction => {
     if (customId === 'select_clone_item') {
       await interaction.deferUpdate();
 
-      const parts = interaction.values[0].split('|');
-      const category = parts[0];
-      const region = parts[parts.length - 1];
+      // ĐÂY LÀ PHƯƠNG ÁN 2: Giải mã JSON an toàn tuyệt đối
+      const { cat: category, reg: region } = JSON.parse(interaction.values[0]);
 
       if (!(await getValidAccessKey(interaction.user.id))) {
         return await interaction.editReply({
@@ -950,7 +949,6 @@ client.on('interactionCreate', async interaction => {
       }
 
       const linkDoc = await LinkModel.findOne({ category });
-      
       const itemData = linkDoc?.links?.premium?.[region];
 
       if (!itemData || !itemData.url) {
@@ -994,13 +992,12 @@ client.on('interactionCreate', async interaction => {
       return await interaction.editReply({ embeds: [resultEmbed], components: [] });
     }
 
-    // ĐÃ THÊM: Xử lý Select Menu cho lệnh /removelink
     if (customId === 'admin_select_remove_category') {
       if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
 
-      const selectedValue = interaction.values[0];
+      const data = JSON.parse(interaction.values[0]);
 
-      if (selectedValue === 'DELETE_ALL_DATA') {
+      if (data.action === 'DELETE_ALL') {
         await LinkModel.deleteMany({});
         return await interaction.update({
           embeds: [createBotEmbed({
@@ -1012,22 +1009,21 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      await LinkModel.deleteOne({ category: selectedValue });
+      await LinkModel.deleteOne({ category: data.cat });
       return await interaction.update({
         embeds: [createBotEmbed({
           title: '🗑️ Xóa Thành Công',
-          description: `Đã xóa thành công mục Clone **${selectedValue}** khỏi hệ thống!`,
+          description: `Đã xóa thành công mục Clone **${data.cat}** khỏi hệ thống!`,
           color: COLORS.SUCCESS
         })],
         components: []
       });
     }
 
-    // ĐÃ THÊM: Xử lý Select Menu chọn mục cho /setstatus
     if (customId === 'admin_select_setstatus_category') {
       if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
 
-      const selectedCategory = interaction.values[0];
+      const { cat: selectedCategory } = JSON.parse(interaction.values[0]);
 
       const statusSelectMenu = new StringSelectMenuBuilder()
         .setCustomId(`admin_apply_status|${selectedCategory}`)
@@ -1048,7 +1044,6 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    // ĐÃ THÊM: Cập nhật trạng thái vào MongoDB sau khi chọn ở bước trên
     if (customId.startsWith('admin_apply_status|')) {
       if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
 
