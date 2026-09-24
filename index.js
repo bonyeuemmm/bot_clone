@@ -374,7 +374,7 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    if (commandName === 'removelink') {
+        if (commandName === 'removelink') {
       if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
 
       const allLinks = await LinkModel.find({});
@@ -401,6 +401,23 @@ client.on('interactionCreate', async interaction => {
           value: JSON.stringify({ action: 'DELETE_ONE', cat: item.category })
         }))
       ];
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('admin_select_remove_category')
+        .setPlaceholder('--- Chọn mục Clone muốn xóa ---')
+        .addOptions(options.slice(0, 25));
+
+      return await interaction.reply({
+        embeds: [createBotEmbed({
+          title: '🗑️ XÓA PHIÊN BẢN CLONE',
+          description: 'Chọn mục Clone cụ thể hoặc chọn **[XÓA TẤT CẢ]** để làm sạch cơ sở dữ liệu:',
+          color: COLORS.ERROR
+        })],
+        components: [new ActionRowBuilder().addComponents(selectMenu)],
+        ephemeral: true
+      });
+    }
+
 
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('admin_select_remove_category')
