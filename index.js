@@ -18,7 +18,7 @@ const COLORS = {
   ERROR: 0xe74c3c
 };
 
-const FOOTER_ICON_URL = '[https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png](https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png)';
+const FOOTER_ICON_URL = 'https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png';
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log('🍃 Kết nối MongoDB thành công!'))
