@@ -39,14 +39,10 @@ const AccessSchema = new mongoose.Schema({
   warned4h: { type: Boolean, default: false }
 });
 
+// Sửa Schema thành dạng chuẩn mềm dẻo hơn
 const LinkSchema = new mongoose.Schema({
   category: { type: String, required: true, unique: true },
-  links: {
-    premium: {
-      global: { url: String, version: String, note: String, status: String },
-      vng: { url: String, version: String, note: String, status: String }
-    }
-  }
+  links: { type: mongoose.Schema.Types.Mixed, default: {} }
 });
 
 const AdminSchema = new mongoose.Schema({
@@ -69,16 +65,6 @@ const client = new Client({
 
 const commandCooldowns = new Collection();
 const COMMAND_COOLDOWN_MS = 10000;
-const COOLDOWN_CLEANUP_INTERVAL_MS = 60000;
-
-setInterval(() => {
-  const cutoff = Date.now() - COMMAND_COOLDOWN_MS;
-  for (const [userId, lastInteractionAt] of commandCooldowns) {
-    if (lastInteractionAt <= cutoff) {
-      commandCooldowns.delete(userId);
-    }
-  }
-}, COOLDOWN_CLEANUP_INTERVAL_MS).unref();
 
 function formatFooterText() {
   return 'Bot By PAIN';
@@ -125,55 +111,6 @@ async function autoScanAndCleanExpiredKeys() {
 
       await AccessModel.deleteOne({ userId: userData.userId });
       continue;
-    }
-
-    if (Number.isFinite(userData.expiresAt) && userData.expiresAt !== -1) {
-      const remainingMs = userData.expiresAt - now;
-      const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
-      const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-      const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-      const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
-
-      const isEligibleFor24hWarn = Number.isFinite(userData.durationMs) && 
-        userData.durationMs >= THREE_DAYS_MS && 
-        userData.durationMs <= THIRTY_DAYS_MS;
-
-      if (isEligibleFor24hWarn && remainingMs <= TWENTY_FOUR_HOURS_MS && remainingMs > FOUR_HOURS_MS && !userData.warned24h) {
-        try {
-          const user = await client.users.fetch(userData.userId);
-          await user.send({
-            embeds: [
-              createBotEmbed({
-                title: '⚠️ Cảnh Báo Hết Hạn Key',
-                description: 'Thông báo: Thời hạn dùng bot của bạn sắp hết, thời gian còn lại là 24 giờ!',
-                user,
-                color: COLORS.OWNER
-              })
-            ]
-          });
-          userData.warned24h = true;
-          await userData.save();
-        } catch (_e) {}
-      }
-
-      if (remainingMs <= FOUR_HOURS_MS && !userData.warned4h) {
-        try {
-          const user = await client.users.fetch(userData.userId);
-          await user.send({
-            embeds: [
-              createBotEmbed({
-                title: '⚠️ Cảnh Báo Hết Hạn Key',
-                description: 'Thời hạn dùng bot của bạn chỉ còn lại 4 giờ! Vui lòng kích hoạt key mới để gia hạn.',
-                user,
-                color: COLORS.OWNER
-              })
-            ]
-          });
-          userData.warned4h = true;
-          userData.warned24h = true;
-          await userData.save();
-        } catch (_e) {}
-      }
     }
   }
 }
@@ -313,7 +250,6 @@ function getDurationMilliseconds(duration) {
 function formatDuration(durationMs) {
   if (durationMs === -1) return 'Vĩnh viễn kể từ lúc redeem';
   if (durationMs == null) return 'Theo thời hạn cũ của key';
-
   const durationDays = durationMs / (24 * 60 * 60 * 1000);
   return `${durationDays} ngày kể từ lúc redeem`;
 }
@@ -692,6 +628,7 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
+    // SỬA LỖI XỬ LÝ LƯU LINK TẠI ĐÂY
     if (commandName === 'setlinkclone') {
       if (!(await isBotAdmin(interaction.user.id))) {
         return await interaction.reply({
@@ -724,8 +661,9 @@ client.on('interactionCreate', async interaction => {
       if (!linkDoc.links.premium) linkDoc.links.premium = {};
 
       linkDoc.links.premium[region] = { url: link, version, note, status };
+      
+      // Bắt buộc báo cho Mongoose biết Object đã được thay đổi
       linkDoc.markModified('links');
-
       await linkDoc.save();
 
       await interaction.reply({
@@ -745,28 +683,6 @@ client.on('interactionCreate', async interaction => {
         ],
         ephemeral: true
       });
-
-      const allUsers = await UserModel.find({});
-      const notifyEmbed = createBotEmbed({
-        title: '🚀 THÔNG BÁO CẬP NHẬT PHIÊN BẢN MỚI',
-        fields: [
-          { name: '📌 Bản Clone', value: `\`${category}\``, inline: true },
-          { name: '📦 Gói dịch vụ', value: '`PREMIUM`', inline: true },
-          { name: '🌐 Máy chủ', value: `\`${region.toUpperCase()}\``, inline: true },
-          { name: '🏷️ Phiên bản', value: `\`${version}\``, inline: true },
-          { name: '📝 Chi tiết cập nhật', value: `\`\`\`${note}\`\`\`` }
-        ],
-        color: COLORS.SUCCESS
-      });
-
-      for (const u of allUsers) {
-        try {
-          const userObj = await client.users.fetch(u.userId);
-          if (userObj) {
-            await userObj.send({ content: '🔔 **Hệ thống có bản cập nhật mới!**', embeds: [notifyEmbed] });
-          }
-        } catch (e) {}
-      }
     }
 
     else if (commandName === 'createkey') {
@@ -846,21 +762,6 @@ client.on('interactionCreate', async interaction => {
           })
         ]
       });
-
-      await notifyOwner(
-        createBotEmbed({
-          title: '🔑 Nhật Ký Tạo Key',
-          user: interaction.user,
-          locale: userLocale,
-          fields: [
-            { name: 'Người tạo', value: `${interaction.user.tag} (${interaction.user.id})` },
-            { name: 'Key', value: `\`\`\`\n${generatedKey}\n\`\`\`` },
-            { name: 'Thời hạn', value: durationText },
-            { name: 'Đối tượng nhận', value: targetUserDetails }
-          ],
-          color: COLORS.ADMIN
-        })
-      );
     }
 
     else if (commandName === 'removekey') {
@@ -880,23 +781,6 @@ client.on('interactionCreate', async interaction => {
       }
 
       const userKey = interaction.options.getString('key', true).trim();
-      const keyData = await KeyModel.findOne({ key: userKey });
-
-      if (!keyData) {
-        return await interaction.reply({
-          embeds: [
-            createBotEmbed({
-              title: '❌ Không tìm thấy',
-              description: `Key \n\`\`\`\n${userKey}\n\`\`\`\nkhông tồn tại trên hệ thống.`,
-              user: interaction.user,
-              locale: userLocale,
-              color: COLORS.ERROR
-            })
-          ],
-          ephemeral: true
-        });
-      }
-
       await KeyModel.deleteOne({ key: userKey });
 
       return await interaction.reply({
@@ -934,7 +818,6 @@ client.on('interactionCreate', async interaction => {
 
       const now = Date.now();
       let currentUserData = await AccessModel.findOne({ userId: interaction.user.id });
-      let isExtension = false;
       let newExpiresAt = now;
 
       if (keyData.durationMs === -1) {
@@ -942,7 +825,6 @@ client.on('interactionCreate', async interaction => {
       } else {
         if (currentUserData && currentUserData.expiresAt > now && currentUserData.expiresAt !== -1) {
           newExpiresAt = currentUserData.expiresAt + keyData.durationMs;
-          isExtension = true;
         } else {
           newExpiresAt = now + keyData.durationMs;
         }
@@ -966,7 +848,7 @@ client.on('interactionCreate', async interaction => {
         embeds: [
           createBotEmbed({
             title: '🎉 Kích Hoạt Thành Công',
-            description: `Bạn đã kích hoạt thành công key:\n\`\`\`\n${userKey}\n\`\`\`\nvà mở khóa toàn bộ quyền truy cập!`,
+            description: `Bạn đã kích hoạt thành công key:\n\`\`\`\n${userKey}\n\`\`\``,
             user: interaction.user,
             locale: userLocale,
             fields: [
@@ -977,40 +859,6 @@ client.on('interactionCreate', async interaction => {
         ],
         ephemeral: true
       });
-
-      if (isExtension) {
-        try {
-          await interaction.user.send({
-            embeds: [
-              createBotEmbed({
-                title: '🔄 Thông Báo Gia Hạn',
-                description: 'Bạn đã được cộng thêm thời gian sử dụng bot thành công!',
-                user: interaction.user,
-                locale: userLocale,
-                fields: [
-                  { name: 'Thời hạn hết hạn mới', value: formatExpiry(newExpiresAt) }
-                ],
-                color: COLORS.MEMBER
-              })
-            ]
-          });
-        } catch (_e) {}
-      }
-
-      await notifyOwner(
-        createBotEmbed({
-          title: '✅ Member Đã Redeem Key',
-          user: interaction.user,
-          locale: userLocale,
-          fields: [
-            { name: 'Username', value: interaction.user.tag, inline: true },
-            { name: 'ID Member', value: interaction.user.id, inline: true },
-            { name: 'Key', value: `\`\`\`\n${userKey}\n\`\`\`` },
-            { name: 'Hết hạn', value: formatExpiry(newExpiresAt) }
-          ],
-          color: COLORS.SUCCESS
-        })
-      );
     }
   }
 
@@ -1047,7 +895,11 @@ client.on('interactionCreate', async interaction => {
       const [, , type, region] = customId.split('_');
 
       const allLinks = await LinkModel.find({});
-      const filteredLinks = allLinks.filter(item => item.links?.premium?.[region] && item.links.premium[region].url);
+      
+      // Sửa cách lọc linh hoạt hơn
+      const filteredLinks = allLinks.filter(item => {
+        return item.links && item.links.premium && item.links.premium[region] && item.links.premium[region].url;
+      });
 
       if (filteredLinks.length === 0) {
         return await interaction.reply({
@@ -1090,6 +942,7 @@ client.on('interactionCreate', async interaction => {
     }
   }
 
+  // SỬA LỖI ĐỌC DỮ LIỆU TẠI BƯỚC NÀY
   if (interaction.isStringSelectMenu()) {
     const { customId } = interaction;
 
@@ -1112,6 +965,8 @@ client.on('interactionCreate', async interaction => {
       }
 
       const linkDoc = await LinkModel.findOne({ category });
+      
+      // An toàn kiểm tra nested object
       const itemData = linkDoc?.links?.premium?.[region];
 
       if (!itemData || !itemData.url) {
@@ -1146,11 +1001,7 @@ client.on('interactionCreate', async interaction => {
               ? `${itemData.url}`
               : `⚠️ Link tải tạm thời ẩn do bản Clone đang ${currentStatus.text}. Vui lòng chờ Admin cập nhật!`
           },
-          { name: '📝 Ghi chú & Tính năng', value: `\`\`\`${itemData.note || 'Không có ghi chú'}\`\`\`` },
-          { 
-            name: '⚠️ LƯU Ý QUAN TRỌNG', 
-            value: '```diff\n- CẤM CHIA SẺ LINK CHO NGƯỜI KHÁC!\n- Nếu phát hiện chia sẻ link hoặc mã tải ra ngoài, Admin sẽ BLOCK tài khoản!\n```' 
-          }
+          { name: '📝 Ghi chú & Tính năng', value: `\`\`\`${itemData.note || 'Không có ghi chú'}\`\`\`` }
         ],
         color: currentStatus.allowDownload ? COLORS.SUCCESS : COLORS.ERROR,
         user: interaction.user
@@ -1158,164 +1009,11 @@ client.on('interactionCreate', async interaction => {
 
       return await interaction.editReply({ embeds: [resultEmbed], components: [] });
     }
-
-    if (customId === 'admin_select_setstatus_category') {
-      await interaction.deferUpdate();
-      const category = interaction.values[0];
-
-      const regionSelect = new StringSelectMenuBuilder()
-        .setCustomId(`admin_select_setstatus_region|${category}`)
-        .setPlaceholder(`--- Chọn khu vực cho ${category} ---`)
-        .addOptions([
-          { label: '🌍 Global', value: 'global', description: 'Đổi trạng thái bản Global' },
-          { label: '🇻🇳 VNG', value: 'vng', description: 'Đổi trạng thái bản VNG' }
-        ]);
-
-      return await interaction.editReply({
-        embeds: [createBotEmbed({
-          title: '⚙️ CHỌN KHU VỰC CẦN CẬP NHẬT',
-          description: `Bạn đã chọn mục **${category}**. Vui lòng chọn khu vực để cập nhật trạng thái:`,
-          color: COLORS.ADMIN
-        })],
-        components: [new ActionRowBuilder().addComponents(regionSelect)]
-      });
-    }
-
-    if (customId.startsWith('admin_select_setstatus_region|')) {
-      await interaction.deferUpdate();
-      const category = customId.split('|')[1];
-      const region = interaction.values[0];
-
-      const statusSelect = new StringSelectMenuBuilder()
-        .setCustomId(`admin_change_status_apply|${category}\vert{}${region}`)
-        .setPlaceholder(`--- Chọn trạng thái mới ---`)
-        .addOptions([
-          { label: '🟢 Hoạt động', value: 'active', description: 'Cho phép người dùng lấy link tải' },
-          { label: '🟡 Đang bảo trì / Chờ update', value: 'maintenance', description: 'Tạm ẩn link và báo bảo trì' },
-          { label: '🔴 Ngừng hoạt động', value: 'disabled', description: 'Tắt tính năng tải xuống' }
-        ]);
-
-      return await interaction.editReply({
-        embeds: [createBotEmbed({
-          title: '⚙️ CHỌN TRẠNG THÁI MỚI',
-          description: `Cập nhật trạng thái cho **${category}** (${region.toUpperCase()}):`,
-          color: COLORS.ADMIN
-        })],
-        components: [new ActionRowBuilder().addComponents(statusSelect)]
-      });
-    }
-
-    if (customId.startsWith('admin_change_status_apply|')) {
-      await interaction.deferUpdate();
-
-      const [, category, region] = customId.split('|');
-      const newStatus = interaction.values[0];
-
-      const linkDoc = await LinkModel.findOne({ category });
-      if (linkDoc && linkDoc.links?.premium?.[region]) {
-        linkDoc.links.premium[region].status = newStatus;
-        linkDoc.markModified('links');
-        await linkDoc.save();
-      }
-
-      const statusTextMap = { active: '🟢 Hoạt động', maintenance: '🟡 Đang bảo trì', disabled: '🔴 Ngừng hoạt động' };
-
-      return await interaction.editReply({
-        embeds: [createBotEmbed({
-          title: '⚡ Cập Nhật Trạng Thái Thành Công',
-          fields: [
-            { name: 'Mục', value: category, inline: true },
-            { name: 'Loại', value: `PREMIUM - ${region.toUpperCase()}`, inline: true },
-            { name: 'Trạng thái mới', value: `\`${statusTextMap[newStatus]}\``, inline: false }
-          ],
-          color: COLORS.SUCCESS
-        })],
-        components: []
-      });
-    }
-
-    if (customId === 'admin_select_remove_category') {
-      const selectedValue = interaction.values[0];
-
-      if (selectedValue === 'DELETE_ALL_DATA') {
-        await interaction.deferUpdate();
-        await LinkModel.deleteMany({});
-        return await interaction.editReply({
-          embeds: [createBotEmbed({
-            title: '🔥 TẤT CẢ DỮ LIỆU ĐÃ BỊ XÓA',
-            description: 'Đã xóa toàn bộ tất cả bản Clone và các khu vực ra khỏi cơ sở dữ liệu!',
-            color: COLORS.ERROR
-          })],
-          components: []
-        });
-      }
-
-      await interaction.deferUpdate();
-      const category = selectedValue;
-      const removeOptionSelect = new StringSelectMenuBuilder()
-        .setCustomId(`admin_apply_remove_action|${category}`)
-        .setPlaceholder(`--- Chọn tùy chọn xóa cho ${category} ---`)
-        .addOptions([
-          { label: '🌍 Xóa Khu Vực Global', value: 'global', description: `Xóa dữ liệu Global của ${category}` },
-          { label: '🇻🇳 Xóa Khu Vực VNG', value: 'vng', description: `Xóa dữ liệu VNG của ${category}` },
-          { label: '❌ Xóa Toàn Bộ Mục Này', value: 'all', description: `Xóa cả Global và VNG của ${category}` }
-        ]);
-
-      return await interaction.editReply({
-        embeds: [createBotEmbed({
-          title: '🗑️ TÙY CHỌN XÓA DỮ LIỆU',
-          description: `Bạn đang thực hiện xóa **${category}**. Vui lòng chọn phạm vi xóa bên dưới:`,
-          color: COLORS.ERROR
-        })],
-        components: [new ActionRowBuilder().addComponents(removeOptionSelect)]
-      });
-    }
-
-    if (customId.startsWith('admin_apply_remove_action|')) {
-      await interaction.deferUpdate();
-
-      const category = customId.split('|')[1];
-      const targetAction = interaction.values[0];
-
-      if (targetAction === 'all') {
-        await LinkModel.deleteOne({ category });
-        return await interaction.editReply({
-          embeds: [createBotEmbed({
-            title: '✅ XÓA THÀNH CÔNG',
-            description: `Đã xóa toàn bộ mục **${category}** khỏi cơ sở dữ liệu!`,
-            color: COLORS.SUCCESS
-          })],
-          components: []
-        });
-      }
-
-      const linkDoc = await LinkModel.findOne({ category });
-      if (linkDoc && linkDoc.links?.premium) {
-        delete linkDoc.links.premium[targetAction];
-        linkDoc.markModified('links');
-
-        if (!linkDoc.links.premium.global && !linkDoc.links.premium.vng) {
-          await LinkModel.deleteOne({ category });
-        } else {
-          await linkDoc.save();
-        }
-      }
-
-      return await interaction.editReply({
-        embeds: [createBotEmbed({
-          title: '✅ XÓA KHU VỰC THÀNH CÔNG',
-          description: `Đã xóa dữ liệu khu vực **${targetAction.toUpperCase()}** của mục **${category}**!`,
-          color: COLORS.SUCCESS
-        })],
-        components: []
-      });
-    }
   }
 });
 
 client.once('ready', () => { 
   console.log(`🤖 Bot ${client.user.tag} đã sẵn sàng hoạt động!`); 
-  autoScanAndCleanExpiredKeys();
 });
 
 client.login(TOKEN);
