@@ -1094,7 +1094,7 @@ client.on('interactionCreate', async interaction => {
     const { customId } = interaction;
 
     if (customId === 'select_clone_item') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferUpdate();
 
       const parts = interaction.values[0].split('|');
       const category = parts[0];
@@ -1106,7 +1106,8 @@ client.on('interactionCreate', async interaction => {
             title: '🔒 Truy Cập Bị Khóa',
             description: 'Key của bạn đã hết hạn!',
             color: COLORS.ERROR
-          })]
+          })],
+          components: []
         });
       }
 
@@ -1119,7 +1120,8 @@ client.on('interactionCreate', async interaction => {
             title: '❌ Thao Tác Thất Bại',
             description: 'Link này vừa bị gỡ hoặc không tồn tại!',
             color: COLORS.ERROR
-          })]
+          })],
+          components: []
         });
       }
 
@@ -1154,10 +1156,11 @@ client.on('interactionCreate', async interaction => {
         user: interaction.user
       });
 
-      return await interaction.editReply({ embeds: [resultEmbed] });
+      return await interaction.editReply({ embeds: [resultEmbed], components: [] });
     }
 
     if (customId === 'admin_select_setstatus_category') {
+      await interaction.deferUpdate();
       const category = interaction.values[0];
 
       const regionSelect = new StringSelectMenuBuilder()
@@ -1168,18 +1171,18 @@ client.on('interactionCreate', async interaction => {
           { label: '🇻🇳 VNG', value: 'vng', description: 'Đổi trạng thái bản VNG' }
         ]);
 
-      return await interaction.reply({
+      return await interaction.editReply({
         embeds: [createBotEmbed({
           title: '⚙️ CHỌN KHU VỰC CẦN CẬP NHẬT',
           description: `Bạn đã chọn mục **${category}**. Vui lòng chọn khu vực để cập nhật trạng thái:`,
           color: COLORS.ADMIN
         })],
-        components: [new ActionRowBuilder().addComponents(regionSelect)],
-        ephemeral: true
+        components: [new ActionRowBuilder().addComponents(regionSelect)]
       });
     }
 
     if (customId.startsWith('admin_select_setstatus_region|')) {
+      await interaction.deferUpdate();
       const category = customId.split('|')[1];
       const region = interaction.values[0];
 
@@ -1192,19 +1195,18 @@ client.on('interactionCreate', async interaction => {
           { label: '🔴 Ngừng hoạt động', value: 'disabled', description: 'Tắt tính năng tải xuống' }
         ]);
 
-      return await interaction.reply({
+      return await interaction.editReply({
         embeds: [createBotEmbed({
           title: '⚙️ CHỌN TRẠNG THÁI MỚI',
           description: `Cập nhật trạng thái cho **${category}** (${region.toUpperCase()}):`,
           color: COLORS.ADMIN
         })],
-        components: [new ActionRowBuilder().addComponents(statusSelect)],
-        ephemeral: true
+        components: [new ActionRowBuilder().addComponents(statusSelect)]
       });
     }
 
     if (customId.startsWith('admin_change_status_apply|')) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferUpdate();
 
       const [, category, region] = customId.split('|');
       const newStatus = interaction.values[0];
@@ -1227,7 +1229,8 @@ client.on('interactionCreate', async interaction => {
             { name: 'Trạng thái mới', value: `\`${statusTextMap[newStatus]}\``, inline: false }
           ],
           color: COLORS.SUCCESS
-        })]
+        })],
+        components: []
       });
     }
 
@@ -1235,17 +1238,19 @@ client.on('interactionCreate', async interaction => {
       const selectedValue = interaction.values[0];
 
       if (selectedValue === 'DELETE_ALL_DATA') {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferUpdate();
         await LinkModel.deleteMany({});
         return await interaction.editReply({
           embeds: [createBotEmbed({
             title: '🔥 TẤT CẢ DỮ LIỆU ĐÃ BỊ XÓA',
             description: 'Đã xóa toàn bộ tất cả bản Clone và các khu vực ra khỏi cơ sở dữ liệu!',
             color: COLORS.ERROR
-          })]
+          })],
+          components: []
         });
       }
 
+      await interaction.deferUpdate();
       const category = selectedValue;
       const removeOptionSelect = new StringSelectMenuBuilder()
         .setCustomId(`admin_apply_remove_action|${category}`)
@@ -1256,19 +1261,18 @@ client.on('interactionCreate', async interaction => {
           { label: '❌ Xóa Toàn Bộ Mục Này', value: 'all', description: `Xóa cả Global và VNG của ${category}` }
         ]);
 
-      return await interaction.reply({
+      return await interaction.editReply({
         embeds: [createBotEmbed({
           title: '🗑️ TÙY CHỌN XÓA DỮ LIỆU',
           description: `Bạn đang thực hiện xóa **${category}**. Vui lòng chọn phạm vi xóa bên dưới:`,
           color: COLORS.ERROR
         })],
-        components: [new ActionRowBuilder().addComponents(removeOptionSelect)],
-        ephemeral: true
+        components: [new ActionRowBuilder().addComponents(removeOptionSelect)]
       });
     }
 
     if (customId.startsWith('admin_apply_remove_action|')) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferUpdate();
 
       const category = customId.split('|')[1];
       const targetAction = interaction.values[0];
@@ -1280,7 +1284,8 @@ client.on('interactionCreate', async interaction => {
             title: '✅ XÓA THÀNH CÔNG',
             description: `Đã xóa toàn bộ mục **${category}** khỏi cơ sở dữ liệu!`,
             color: COLORS.SUCCESS
-          })]
+          })],
+          components: []
         });
       }
 
@@ -1301,7 +1306,8 @@ client.on('interactionCreate', async interaction => {
           title: '✅ XÓA KHU VỰC THÀNH CÔNG',
           description: `Đã xóa dữ liệu khu vực **${targetAction.toUpperCase()}** của mục **${category}**!`,
           color: COLORS.SUCCESS
-        })]
+        })],
+        components: []
       });
     }
   }
