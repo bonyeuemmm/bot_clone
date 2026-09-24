@@ -39,7 +39,6 @@ const AccessSchema = new mongoose.Schema({
   warned4h: { type: Boolean, default: false }
 });
 
-// Sửa Schema thành dạng chuẩn mềm dẻo hơn
 const LinkSchema = new mongoose.Schema({
   category: { type: String, required: true, unique: true },
   links: { type: mongoose.Schema.Types.Mixed, default: {} }
@@ -252,17 +251,6 @@ function formatDuration(durationMs) {
   if (durationMs == null) return 'Theo thời hạn cũ của key';
   const durationDays = durationMs / (24 * 60 * 60 * 1000);
   return `${durationDays} ngày kể từ lúc redeem`;
-}
-
-async function notifyOwner(embed) {
-  try {
-    const owner = await client.users.fetch(OWNER_ID);
-    await owner.send({ embeds: [embed] });
-    return true;
-  } catch (error) {
-    console.error('Không thể gửi DM thông báo cho Owner:', error);
-    return false;
-  }
 }
 
 async function getValidAccessKey(userId) {
@@ -628,7 +616,6 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    // SỬA LỖI XỬ LÝ LƯU LINK TẠI ĐÂY
     if (commandName === 'setlinkclone') {
       if (!(await isBotAdmin(interaction.user.id))) {
         return await interaction.reply({
@@ -662,7 +649,6 @@ client.on('interactionCreate', async interaction => {
 
       linkDoc.links.premium[region] = { url: link, version, note, status };
       
-      // Bắt buộc báo cho Mongoose biết Object đã được thay đổi
       linkDoc.markModified('links');
       await linkDoc.save();
 
@@ -896,7 +882,6 @@ client.on('interactionCreate', async interaction => {
 
       const allLinks = await LinkModel.find({});
       
-      // Sửa cách lọc linh hoạt hơn
       const filteredLinks = allLinks.filter(item => {
         return item.links && item.links.premium && item.links.premium[region] && item.links.premium[region].url;
       });
@@ -912,6 +897,7 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
+      // ĐÃ SỬA: Đổi separator từ \vert{} thành |
       const options = filteredLinks.map(item => {
         const data = item.links.premium[region];
         const vText = data.version || 'v1.0';
@@ -942,7 +928,6 @@ client.on('interactionCreate', async interaction => {
     }
   }
 
-  // SỬA LỖI ĐỌC DỮ LIỆU TẠI BƯỚC NÀY
   if (interaction.isStringSelectMenu()) {
     const { customId } = interaction;
 
@@ -966,7 +951,6 @@ client.on('interactionCreate', async interaction => {
 
       const linkDoc = await LinkModel.findOne({ category });
       
-      // An toàn kiểm tra nested object
       const itemData = linkDoc?.links?.premium?.[region];
 
       if (!itemData || !itemData.url) {
@@ -1008,6 +992,104 @@ client.on('interactionCreate', async interaction => {
       });
 
       return await interaction.editReply({ embeds: [resultEmbed], components: [] });
+    }
+
+    // ĐÃ THÊM: Xử lý Select Menu cho lệnh /removelink
+    if (customId === 'admin_select_remove_category') {
+      if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
+
+      const selectedValue = interaction.values[0];
+
+      if (selectedValue === 'DELETE_ALL_DATA') {
+        await LinkModel.deleteMany({});
+        return await interaction.update({
+          embeds: [createBotEmbed({
+            title: '🗑️ Xóa Thành Công',
+            description: 'Đã xóa toàn bộ dữ liệu tất cả bản Clone khỏi hệ thống!',
+            color: COLORS.SUCCESS
+          })],
+          components: []
+        });
+      }
+
+      await LinkModel.deleteOne({ category: selectedValue });
+      return await interaction.update({
+        embeds: [createBotEmbed({
+          title: '🗑️ Xóa Thành Công',
+          description: `Đã xóa thành công mục Clone **${selectedValue}** khỏi hệ thống!`,
+          color: COLORS.SUCCESS
+        })],
+        components: []
+      });
+    }
+
+    // ĐÃ THÊM: Xử lý Select Menu chọn mục cho /setstatus
+    if (customId === 'admin_select_setstatus_category') {
+      if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
+
+      const selectedCategory = interaction.values[0];
+
+      const statusSelectMenu = new StringSelectMenuBuilder()
+        .setCustomId(`admin_apply_status|${selectedCategory}`)
+        .setPlaceholder(`--- Chọn trạng thái mới cho ${selectedCategory} ---`)
+        .addOptions([
+          { label: '🟢 Hoạt động', value: 'active', description: 'Cho phép member tải xuống bình thường' },
+          { label: '🟡 Đang bảo trì / Chờ update', value: 'maintenance', description: 'Ẩn link tải và hiển thị cảnh báo' },
+          { label: '🔴 Ngừng hoạt động', value: 'disabled', description: 'Ẩn link tải do ngừng hỗ trợ' }
+        ]);
+
+      return await interaction.update({
+        embeds: [createBotEmbed({
+          title: `⚙️ ĐỔI TRẠNG THÁI: ${selectedCategory}`,
+          description: `Vui lòng chọn trạng thái mới áp dụng cho **tất cả khu vực** của ${selectedCategory}:`,
+          color: COLORS.ADMIN
+        })],
+        components: [new ActionRowBuilder().addComponents(statusSelectMenu)]
+      });
+    }
+
+    // ĐÃ THÊM: Cập nhật trạng thái vào MongoDB sau khi chọn ở bước trên
+    if (customId.startsWith('admin_apply_status|')) {
+      if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
+
+      const category = customId.split('|')[1];
+      const newStatus = interaction.values[0];
+
+      const linkDoc = await LinkModel.findOne({ category });
+      if (!linkDoc || !linkDoc.links || !linkDoc.links.premium) {
+        return await interaction.update({
+          embeds: [createBotEmbed({
+            title: '❌ Thao tác thất bại',
+            description: 'Dữ liệu không tồn tại hoặc đã bị xóa!',
+            color: COLORS.ERROR
+          })],
+          components: []
+        });
+      }
+
+      for (const reg in linkDoc.links.premium) {
+        if (linkDoc.links.premium[reg]) {
+          linkDoc.links.premium[reg].status = newStatus;
+        }
+      }
+
+      linkDoc.markModified('links');
+      await linkDoc.save();
+
+      const statusNames = {
+        active: '🟢 Hoạt động',
+        maintenance: '🟡 Đang bảo trì / Chờ update',
+        disabled: '🔴 Ngừng hoạt động'
+      };
+
+      return await interaction.update({
+        embeds: [createBotEmbed({
+          title: '✅ Cập Nhật Trạng Thái Thành Công',
+          description: `Đã đổi trạng thái của **${category}** thành: **${statusNames[newStatus]}**`,
+          color: COLORS.SUCCESS
+        })],
+        components: []
+      });
     }
   }
 });
