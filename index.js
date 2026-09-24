@@ -68,8 +68,8 @@ const client = new Client({
 });
 
 const commandCooldowns = new Collection();
-const COMMAND_COOLDOWN_MS = 10_000;
-const COOLDOWN_CLEANUP_INTERVAL_MS = 60_000;
+const COMMAND_COOLDOWN_MS = 10000;
+const COOLDOWN_CLEANUP_INTERVAL_MS = 60000;
 
 setInterval(() => {
   const cutoff = Date.now() - COMMAND_COOLDOWN_MS;
@@ -115,7 +115,7 @@ async function autoScanAndCleanExpiredKeys() {
           embeds: [
             createBotEmbed({
               title: '⏰ Thông Báo Hết Hạn Key',
-              description: `Thời hạn sử dụng bot của bạn đã hết. Quyền truy cập bot đã tự động bị thu hồi!`,
+              description: 'Thời hạn sử dụng bot của bạn đã hết. Quyền truy cập bot đã tự động bị thu hồi!',
               user,
               color: COLORS.ERROR
             })
@@ -178,7 +178,7 @@ async function autoScanAndCleanExpiredKeys() {
   }
 }
 
-setInterval(autoScanAndCleanExpiredKeys, 30_000);
+setInterval(autoScanAndCleanExpiredKeys, 30000);
 
 const commands = [
   new SlashCommandBuilder()
@@ -403,7 +403,7 @@ client.on('interactionCreate', async interaction => {
 
       const panelEmbed = createBotEmbed({
         title: '🎮 HỆ THỐNG LẤY CLONE ROBLOX PREMIUM',
-        description: 'vui lòng bấm nút bên dưới để lấy roblox và executor premium!',
+        description: 'Vui lòng bấm nút bên dưới để lấy roblox và executor premium!',
         color: COLORS.DEFAULT
       });
 
@@ -435,9 +435,11 @@ client.on('interactionCreate', async interaction => {
 
       const options = filteredLinks.map(item => {
         const data = item.links.premium[region];
+        const vText = data.version || 'v1.0';
+        const nText = data.note || 'Không có ghi chú';
         return {
-          label: `${item.category} [${data.version || 'v1.0'}]`,
-          description: `Trạng thái hiện tại: ${data.status || 'active'}`.slice(0, 100),
+          label: `${item.category} [${vText}]`,
+          description: `Phiên bản: ${vText} -${nText}`.slice(0, 100),
           value: `${item.category}\vert{}${region}`
         };
       });
@@ -480,9 +482,10 @@ client.on('interactionCreate', async interaction => {
 
       const options = filteredLinks.map(item => {
         const data = item.links.premium[region];
+        const vText = data.version || 'v1.0';
         return {
-          label: `${item.category} [${data.version || 'v1.0'}]`,
-          description: `Phiên bản: ${data.version || 'v1.0'}`.slice(0, 100),
+          label: `${item.category} [${vText}]`,
+          description: `Phiên bản: ${vText}`.slice(0, 100),
           value: `${item.category}\vert{}${region}`
         };
       });
@@ -990,7 +993,7 @@ client.on('interactionCreate', async interaction => {
             embeds: [
               createBotEmbed({
                 title: '🔄 Thông Báo Gia Hạn',
-                description: `Bạn đã được cộng thêm thời gian sử dụng bot thành công!`,
+                description: 'Bạn đã được cộng thêm thời gian sử dụng bot thành công!',
                 user: interaction.user,
                 locale: userLocale,
                 fields: [
@@ -1037,7 +1040,7 @@ client.on('interactionCreate', async interaction => {
 
       const subEmbed = createBotEmbed({
         title: '🌐 HỆ THỐNG CHỌN KHU VỰC ROBLOX',
-        description: 'vui lòng chọn khu vực game của bạn',
+        description: 'Vui lòng chọn khu vực game của bạn',
         color: COLORS.ADMIN
       });
 
@@ -1068,20 +1071,22 @@ client.on('interactionCreate', async interaction => {
 
       const options = filteredLinks.map(item => {
         const data = item.links.premium[region];
+        const vText = data.version || 'v1.0';
+        const nText = data.note || 'Không ghi chú';
         return {
-          label: `${item.category} [${data.version || 'v1.0'}]`,
-          description: `Phiên bản: ${data.version \vert{}\vert{} 'v1.0'} •${data.note || 'Không ghi chú'}`.slice(0, 100),
+          label: `${item.category} [${vText}]`,
+          description: `Phiên bản: ${vText} -${nText}`.slice(0, 100),
           value: `${item.category}\vert{}premium\vert{}${region}`
         };
       });
 
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('select_clone_item')
-        .setPlaceholder(`--- Chọn bản Hack (${region.toUpperCase()}) ---`)
+        .setPlaceholder(`--- Chọn bản Clone (${region.toUpperCase()}) ---`)
         .addOptions(options.slice(0, 25));
 
       const responseEmbed = createBotEmbed({
-        title: `👇 DẠNG DANH SÁCH BẢN CLONE (${region.toUpperCase()})`,
+        title: `👇 DANH SÁCH BẢN CLONE (${region.toUpperCase()})`,
         description: `Vui lòng chọn phiên bản **${region.toUpperCase()}** bạn muốn tải từ menu bên dưới:`,
         color: COLORS.DEFAULT
       });
@@ -1144,12 +1149,12 @@ client.on('interactionCreate', async interaction => {
             name: '🔗 Đường dẫn tải xuống', 
             value: currentStatus.allowDownload 
               ? `${itemData.url}`
-              : `⚠️ *Link tải tạm thời ẩn do bản Hack đang ${currentStatus.text}. Vui lòng chờ Admin cập nhật!*`
+              : `⚠️ Link tải tạm thời ẩn do bản Clone đang ${currentStatus.text}. Vui lòng chờ Admin cập nhật!`
           },
           { name: '📝 Ghi chú & Tính năng', value: `\`\`\`${itemData.note || 'Không có ghi chú'}\`\`\`` },
           { 
             name: '⚠️ LƯU Ý QUAN TRỌNG', 
-            value: '```diff\n- CẤM CHIA SẺ LINK CHO NGƯỜI KHÁC!\n- Nếu phát hiện chia sẻ link hoặc mã tải ra ngoài, Admin sẽ BLOCK tài khoản và CẤM bạn không thể sử dụng bot được nữa!\n```' 
+            value: '```diff\n- CẤM CHIA SẺ LINK CHO NGƯỜI KHÁC!\n- Nếu phát hiện chia sẻ link hoặc mã tải ra ngoài, Admin sẽ BLOCK tài khoản!\n```' 
           }
         ],
         color: currentStatus.allowDownload ? COLORS.SUCCESS : COLORS.ERROR,
@@ -1172,7 +1177,7 @@ client.on('interactionCreate', async interaction => {
         ]);
 
       const embed = createBotEmbed({
-        title: `⚙️ CHỌN TRẠNG THÁI MỚI`,
+        title: '⚙️ CHỌN TRẠNG THÁI MỚI',
         description: `Bạn đang đổi trạng thái cho bản **${category}** (${region.toUpperCase()}). Vui lòng chọn trạng thái bên dưới:`,
         color: COLORS.ADMIN
       });
