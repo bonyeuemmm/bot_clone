@@ -897,7 +897,6 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      // ĐÂY LÀ PHƯƠNG ÁN 2: Mã hóa giá trị thành chuỗi JSON
       const options = filteredLinks.map(item => {
         const data = item.links.premium[region];
         const vText = data.version || 'v1.0';
@@ -934,7 +933,6 @@ client.on('interactionCreate', async interaction => {
     if (customId === 'select_clone_item') {
       await interaction.deferUpdate();
 
-      // ĐÂY LÀ PHƯƠNG ÁN 2: Giải mã JSON an toàn tuyệt đối
       const { cat: category, reg: region } = JSON.parse(interaction.values[0]);
 
       if (!(await getValidAccessKey(interaction.user.id))) {
@@ -980,7 +978,7 @@ client.on('interactionCreate', async interaction => {
           { 
             name: '🔗 Đường dẫn tải xuống', 
             value: currentStatus.allowDownload 
-              ? `${itemData.url}`
+              ? `${itemData.url}\n\n⚠️ **LƯU Ý:** Nghiêm cấm chia sẻ link ra ngoài, vi phạm sẽ bị khóa key vĩnh viễn!`
               : `⚠️ Link tải tạm thời ẩn do bản Clone đang ${currentStatus.text}. Vui lòng chờ Admin cập nhật!`
           },
           { name: '📝 Ghi chú & Tính năng', value: `\`\`\`${itemData.note || 'Không có ghi chú'}\`\`\`` }
