@@ -584,7 +584,7 @@ client.on('interactionCreate', async interaction => {
             name: '👑 Dành cho Owner',
             value: [
               '`/setadmin action:<Add/Remove> user:<member>` — Thêm hoặc xóa Admin.',
-              '`/removekey key:<mã-key>` — Xóa vĩnh viễn key và thu hồi quyền.',
+              '`/removekey key:<mã-key>` — Xóa vĩnh viễn key chưa sử dụng.',
               '`/notification message:<nội-dung>` — Gửi tin nhắn hàng loạt qua DM.'
             ].join('\n')
           }
@@ -1103,18 +1103,19 @@ client.on('interactionCreate', async interaction => {
     const { customId } = interaction;
 
     if (customId === 'select_clone_item') {
+      await interaction.deferReply({ ephemeral: true });
+
       const parts = interaction.values[0].split('|');
       const category = parts[0];
       const region = parts[parts.length - 1];
 
       if (!(await getValidAccessKey(interaction.user.id))) {
-        return await interaction.reply({
+        return await interaction.editReply({
           embeds: [createBotEmbed({
             title: '🔒 Truy Cập Bị Khóa',
             description: 'Key của bạn đã hết hạn!',
             color: COLORS.ERROR
-          })],
-          ephemeral: true
+          })]
         });
       }
 
@@ -1122,13 +1123,12 @@ client.on('interactionCreate', async interaction => {
       const itemData = linkDoc?.links?.premium?.[region];
 
       if (!itemData || !itemData.url) {
-        return await interaction.reply({
+        return await interaction.editReply({
           embeds: [createBotEmbed({
             title: '❌ Thao Tác Thất Bại',
             description: 'Link này vừa bị gỡ hoặc không tồn tại!',
             color: COLORS.ERROR
-          })],
-          ephemeral: true
+          })]
         });
       }
 
@@ -1163,7 +1163,7 @@ client.on('interactionCreate', async interaction => {
         user: interaction.user
       });
 
-      return await interaction.reply({ embeds: [resultEmbed], ephemeral: true });
+      return await interaction.editReply({ embeds: [resultEmbed] });
     }
 
     if (customId === 'admin_select_setstatus_item') {
@@ -1192,6 +1192,8 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (customId.startsWith('admin_change_status_apply|')) {
+      await interaction.deferReply({ ephemeral: true });
+
       const [, category, region] = customId.split('|');
       const newStatus = interaction.values[0];
 
@@ -1203,7 +1205,7 @@ client.on('interactionCreate', async interaction => {
 
       const statusTextMap = { active: '🟢 Hoạt động', maintenance: '🟡 Đang bảo trì', disabled: '🔴 Ngừng hoạt động' };
 
-      return await interaction.reply({
+      return await interaction.editReply({
         embeds: [createBotEmbed({
           title: '⚡ Cập Nhật Trạng Thái Thành Công',
           fields: [
@@ -1212,12 +1214,13 @@ client.on('interactionCreate', async interaction => {
             { name: 'Trạng thái mới', value: `\`${statusTextMap[newStatus]}\``, inline: false }
           ],
           color: COLORS.SUCCESS
-        })],
-        ephemeral: true
+        })]
       });
     }
 
     if (customId === 'admin_select_delete_item') {
+      await interaction.deferReply({ ephemeral: true });
+
       const [category, region] = interaction.values[0].split('|');
 
       const linkDoc = await LinkModel.findOne({ category });
@@ -1230,13 +1233,12 @@ client.on('interactionCreate', async interaction => {
         }
       }
 
-      return await interaction.reply({
+      return await interaction.editReply({
         embeds: [createBotEmbed({
           title: '✅ Xóa Bản Clone Thành Công',
           description: `Đã xóa bản Clone **${category}** ở khu vực **${region.toUpperCase()}** khỏi hệ thống!`,
           color: COLORS.SUCCESS
-        })],
-        ephemeral: true
+        })]
       });
     }
   }
