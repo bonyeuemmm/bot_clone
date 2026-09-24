@@ -374,7 +374,7 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-        if (commandName === 'removelink') {
+    if (commandName === 'removelink') {
       if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
 
       const allLinks = await LinkModel.find({});
@@ -401,23 +401,6 @@ client.on('interactionCreate', async interaction => {
           value: JSON.stringify({ action: 'DELETE_ONE', cat: item.category })
         }))
       ];
-
-      const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('admin_select_remove_category')
-        .setPlaceholder('--- Chọn mục Clone muốn xóa ---')
-        .addOptions(options.slice(0, 25));
-
-      return await interaction.reply({
-        embeds: [createBotEmbed({
-          title: '🗑️ XÓA PHIÊN BẢN CLONE',
-          description: 'Chọn mục Clone cụ thể hoặc chọn **[XÓA TẤT CẢ]** để làm sạch cơ sở dữ liệu:',
-          color: COLORS.ERROR
-        })],
-        components: [new ActionRowBuilder().addComponents(selectMenu)],
-        ephemeral: true
-      });
-    }
-
 
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('admin_select_remove_category')
@@ -669,7 +652,7 @@ client.on('interactionCreate', async interaction => {
       linkDoc.markModified('links');
       await linkDoc.save();
 
-      await interaction.reply({
+      return await interaction.reply({
         embeds: [
           createBotEmbed({
             title: '✅ Thêm/Cập Nhật Link Thành Công',
@@ -750,7 +733,7 @@ client.on('interactionCreate', async interaction => {
         }
       }
 
-      await interaction.editReply({
+      return await interaction.editReply({
         embeds: [
           createBotEmbed({
             title: '🔑 Tạo Key Thành Công',
@@ -847,7 +830,7 @@ client.on('interactionCreate', async interaction => {
 
       await KeyModel.deleteOne({ key: userKey });
 
-      await interaction.reply({
+      return await interaction.reply({
         embeds: [
           createBotEmbed({
             title: '🎉 Kích Hoạt Thành Công',
@@ -992,12 +975,14 @@ client.on('interactionCreate', async interaction => {
           { name: '🌐 Máy chủ', value: `\`${region.toUpperCase()}\``, inline: true },
           { name: '📌 Phiên bản', value: `\`${itemData.version || 'Mới nhất'}\``, inline: true },
           { name: '📊 Trạng thái', value: `\`${currentStatus.text}\``, inline: false },
-                    { 
+          { 
             name: '🔗 Đường dẫn tải xuống', 
             value: currentStatus.allowDownload 
               ? `${itemData.url}\n\n⚠️ **LƯU Ý:** Nghiêm cấm chia sẻ link ra ngoài, vi phạm sẽ bị khóa key vĩnh viễn!`
               : `⚠️ Link tải tạm thời ẩn do bản Clone đang ${currentStatus.text}. Vui lòng chờ Admin cập nhật!`
-          },
+          }
+        ]
+      });
 
       return await interaction.editReply({ embeds: [resultEmbed], components: [] });
     }
