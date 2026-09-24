@@ -975,17 +975,12 @@ client.on('interactionCreate', async interaction => {
           { name: '🌐 Máy chủ', value: `\`${region.toUpperCase()}\``, inline: true },
           { name: '📌 Phiên bản', value: `\`${itemData.version || 'Mới nhất'}\``, inline: true },
           { name: '📊 Trạng thái', value: `\`${currentStatus.text}\``, inline: false },
-          { 
+                    { 
             name: '🔗 Đường dẫn tải xuống', 
             value: currentStatus.allowDownload 
               ? `${itemData.url}\n\n⚠️ **LƯU Ý:** Nghiêm cấm chia sẻ link ra ngoài, vi phạm sẽ bị khóa key vĩnh viễn!`
               : `⚠️ Link tải tạm thời ẩn do bản Clone đang ${currentStatus.text}. Vui lòng chờ Admin cập nhật!`
           },
-          { name: '📝 Ghi chú & Tính năng', value: `\`\`\`${itemData.note || 'Không có ghi chú'}\`\`\`` }
-        ],
-        color: currentStatus.allowDownload ? COLORS.SUCCESS : COLORS.ERROR,
-        user: interaction.user
-      });
 
       return await interaction.editReply({ embeds: [resultEmbed], components: [] });
     }
