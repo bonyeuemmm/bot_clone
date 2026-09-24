@@ -7,7 +7,7 @@ const OWNER_ID = process.env.OWNER_ID || '1208450889246048306';
 const MONGO_URI = process.env.MONGO_URI;
 
 const MAIN_SERVER_ID = '1454813193028374540';
-const SERVER_INVITE_LINK = 'https://discord.gg/z7RUNArBuJ';
+const SERVER_INVITE_LINK = '[https://discord.gg/z7RUNArBuJ](https://discord.gg/z7RUNArBuJ)';
 
 const COLORS = {
   DEFAULT: 0x9b59b6,
@@ -18,7 +18,7 @@ const COLORS = {
   ERROR: 0xe74c3c
 };
 
-const FOOTER_ICON_URL = 'https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png';
+const FOOTER_ICON_URL = '[https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png](https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png)';
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log('🍃 Kết nối MongoDB thành công!'))
@@ -408,7 +408,7 @@ client.on('interactionCreate', async interaction => {
       });
 
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_type_premium').setLabel('👑 Bản PREMIUM (Cần Key)').setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId('btn_type_premium').setLabel('Get Clone').setStyle(ButtonStyle.Success)
       );
 
       await interaction.channel.send({ embeds: [panelEmbed], components: [row] });
@@ -825,7 +825,7 @@ client.on('interactionCreate', async interaction => {
                 user: fetchedTargetUser,
                 locale: userLocale,
                 fields: [
-                  { name: 'Mã Key', value: `\`${generatedKey}\`` },
+                  { name: 'Mã Key', value: `\`\`\`\n${generatedKey}\n\`\`\`` },
                   { name: 'Thời hạn', value: durationText },
                   { name: 'Hướng dẫn', value: `Sử dụng lệnh \`/redeemkey key:${generatedKey}\` để mở khóa bot.` }
                 ],
@@ -847,9 +847,9 @@ client.on('interactionCreate', async interaction => {
             user: interaction.user,
             locale: userLocale,
             fields: [
-              { name: 'Mã Key', value: `\`${generatedKey}\``, inline: true },
+              { name: 'Mã Key', value: `\`\`\`\n${generatedKey}\n\`\`\``, inline: false },
               { name: 'Thời hạn', value: durationText, inline: true },
-              { name: 'Trạng thái DM', value: isDirectSent ? '✅ Đã gửi DM' : (targetUser ? '❌ Lỗi gửi DM' : 'Không gửi') }
+              { name: 'Trạng thái DM', value: isDirectSent ? '✅ Đã gửi DM' : (targetUser ? '❌ Lỗi gửi DM' : 'Không gửi'), inline: true }
             ],
             color: COLORS.ADMIN
           })
@@ -863,7 +863,7 @@ client.on('interactionCreate', async interaction => {
           locale: userLocale,
           fields: [
             { name: 'Người tạo', value: `${interaction.user.tag} (${interaction.user.id})` },
-            { name: 'Key', value: `\`${generatedKey}\`` },
+            { name: 'Key', value: `\`\`\`\n${generatedKey}\n\`\`\`` },
             { name: 'Thời hạn', value: durationText },
             { name: 'Đối tượng nhận', value: targetUserDetails }
           ],
@@ -896,7 +896,7 @@ client.on('interactionCreate', async interaction => {
           embeds: [
             createBotEmbed({
               title: '❌ Không tìm thấy',
-              description: `Key \`${userKey}\` không tồn tại trên hệ thống.`,
+              description: `Key \n\`\`\`\n${userKey}\n\`\`\`\nkhông tồn tại trên hệ thống.`,
               user: interaction.user,
               locale: userLocale,
               color: COLORS.ERROR
@@ -912,7 +912,7 @@ client.on('interactionCreate', async interaction => {
         embeds: [
           createBotEmbed({
             title: '✅ Đã Xóa Key',
-            description: `Đã xóa vĩnh viễn key chưa sử dụng \`${userKey}\`.`,
+            description: `Đã xóa vĩnh viễn key chưa sử dụng:\n\`\`\`\n${userKey}\n\`\`\``,
             user: interaction.user,
             locale: userLocale,
             color: COLORS.OWNER
@@ -931,7 +931,7 @@ client.on('interactionCreate', async interaction => {
           embeds: [
             createBotEmbed({
               title: '❌ Key Không Hợp Lệ',
-              description: `Mã key \`${userKey}\` không tồn tại hoặc đã nhập sai!`,
+              description: `Mã key:\n\`\`\`\n${userKey}\n\`\`\`\nkhông tồn tại hoặc đã nhập sai!`,
               user: interaction.user,
               locale: userLocale,
               color: COLORS.ERROR
@@ -975,7 +975,7 @@ client.on('interactionCreate', async interaction => {
         embeds: [
           createBotEmbed({
             title: '🎉 Kích Hoạt Thành Công',
-            description: `Bạn đã kích hoạt thành công key \`${userKey}\` và mở khóa toàn bộ quyền truy cập!`,
+            description: `Bạn đã kích hoạt thành công key:\n\`\`\`\n${userKey}\n\`\`\`\nvà mở khóa toàn bộ quyền truy cập!`,
             user: interaction.user,
             locale: userLocale,
             fields: [
@@ -1014,7 +1014,7 @@ client.on('interactionCreate', async interaction => {
           fields: [
             { name: 'Username', value: interaction.user.tag, inline: true },
             { name: 'ID Member', value: interaction.user.id, inline: true },
-            { name: 'Key', value: `\`${userKey}\`` },
+            { name: 'Key', value: `\`\`\`\n${userKey}\n\`\`\`` },
             { name: 'Hết hạn', value: formatExpiry(newExpiresAt) }
           ],
           color: COLORS.SUCCESS
@@ -1103,7 +1103,9 @@ client.on('interactionCreate', async interaction => {
     const { customId } = interaction;
 
     if (customId === 'select_clone_item') {
-      const [category, type, region] = interaction.values[0].split('|');
+      const parts = interaction.values[0].split('|');
+      const category = parts[0];
+      const region = parts[parts.length - 1];
 
       if (!(await getValidAccessKey(interaction.user.id))) {
         return await interaction.reply({
@@ -1132,7 +1134,7 @@ client.on('interactionCreate', async interaction => {
 
       const statusMap = {
         active: { text: '🟢 Đang hoạt động', allowDownload: true },
-        maintenance: { text: '🟡 Đang bảo trì / Chờ update Roblox', allowDownload: false },
+        maintenance: { text: '🟡 Đang bảo trì / Chờ update', allowDownload: false },
         disabled: { text: '🔴 Ngừng hoạt động', allowDownload: false }
       };
 
