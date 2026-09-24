@@ -7,7 +7,7 @@ const OWNER_ID = process.env.OWNER_ID || '1208450889246048306';
 const MONGO_URI = process.env.MONGO_URI;
 
 const MAIN_SERVER_ID = '1454813193028374540';
-const SERVER_INVITE_LINK = '[https://discord.gg/z7RUNArBuJ](https://discord.gg/z7RUNArBuJ)';
+const SERVER_INVITE_LINK = 'https://discord.gg/z7RUNArBuJ';
 
 const COLORS = {
   DEFAULT: 0x9b59b6,
