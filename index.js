@@ -231,13 +231,11 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('setstatus')
-    .setDescription('Chọn khu vực để cập nhật trạng thái bản Clone')
-    .addStringOption(opt => opt.setName('region').setDescription('Chọn khu vực').setRequired(true).addChoices({ name: 'Global', value: 'global' }, { name: 'VNG', value: 'vng' })),
+    .setDescription('Chọn bản Clone để cập nhật trạng thái'),
 
   new SlashCommandBuilder()
-    .setName('deletelink')
-    .setDescription('Chọn khu vực để xóa bản Clone')
-    .addStringOption(opt => opt.setName('region').setDescription('Chọn khu vực').setRequired(true).addChoices({ name: 'Global', value: 'global' }, { name: 'VNG', value: 'vng' })),
+    .setName('removelink')
+    .setDescription('Xóa bản Clone hoặc toàn bộ dữ liệu'),
 
   new SlashCommandBuilder()
     .setName('setuppanel')
@@ -418,91 +416,79 @@ client.on('interactionCreate', async interaction => {
     if (commandName === 'setstatus') {
       if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
 
-      const region = interaction.options.getString('region');
       const allLinks = await LinkModel.find({});
-      const filteredLinks = allLinks.filter(item => item.links?.premium?.[region]?.url);
-
-      if (filteredLinks.length === 0) {
+      if (allLinks.length === 0) {
         return await interaction.reply({
           embeds: [createBotEmbed({
             title: '❌ Thao tác thất bại',
-            description: `Hiện chưa có bản Clone nào trong hệ thống ở khu vực **${region.toUpperCase()}**!`,
+            description: 'Hiện chưa có bản Clone nào được thiết lập trong hệ thống!',
             color: COLORS.ERROR
           })],
           ephemeral: true
         });
       }
 
-      const options = filteredLinks.map(item => {
-        const data = item.links.premium[region];
-        const vText = data.version || 'v1.0';
-        const nText = data.note || 'Không có ghi chú';
-        return {
-          label: `${item.category} [${vText}]`,
-          description: `Phiên bản: ${vText} -${nText}`.slice(0, 100),
-          value: `${item.category}\vert{}${region}`
-        };
-      });
+      const options = allLinks.map(item => ({
+        label: item.category,
+        description: `Mục: ${item.category}`,
+        value: item.category
+      }));
 
       const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('admin_select_setstatus_item')
-        .setPlaceholder(`--- Chọn bản Clone (${region.toUpperCase()}) ---`)
+        .setCustomId('admin_select_setstatus_category')
+        .setPlaceholder('--- Chọn mục Clone muốn cập nhật trạng thái ---')
         .addOptions(options.slice(0, 25));
 
-      const menuEmbed = createBotEmbed({
-        title: `⚙️ CẬP NHẬT TRẠNG THÁI (${region.toUpperCase()})`,
-        description: 'Vui lòng chọn bản Clone bạn muốn cập nhật trạng thái bên dưới:',
-        color: COLORS.ADMIN
-      });
-
       return await interaction.reply({
-        embeds: [menuEmbed],
+        embeds: [createBotEmbed({
+          title: '⚙️ CẬP NHẬT TRẠNG THÁI CLONE',
+          description: 'Vui lòng chọn mục Clone bạn muốn thay đổi trạng thái:',
+          color: COLORS.ADMIN
+        })],
         components: [new ActionRowBuilder().addComponents(selectMenu)],
         ephemeral: true
       });
     }
 
-    if (commandName === 'deletelink') {
+    if (commandName === 'removelink') {
       if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
 
-      const region = interaction.options.getString('region');
       const allLinks = await LinkModel.find({});
-      const filteredLinks = allLinks.filter(item => item.links?.premium?.[region]?.url);
-
-      if (filteredLinks.length === 0) {
+      if (allLinks.length === 0) {
         return await interaction.reply({
           embeds: [createBotEmbed({
             title: '❌ Thao tác thất bại',
-            description: `Không có bản Clone nào khả dụng ở khu vực **${region.toUpperCase()}** để xóa!`,
+            description: 'Không có dữ liệu Clone nào trong hệ thống để xóa!',
             color: COLORS.ERROR
           })],
           ephemeral: true
         });
       }
 
-      const options = filteredLinks.map(item => {
-        const data = item.links.premium[region];
-        const vText = data.version || 'v1.0';
-        return {
-          label: `${item.category} [${vText}]`,
-          description: `Phiên bản: ${vText}`.slice(0, 100),
-          value: `${item.category}\vert{}${region}`
-        };
-      });
+      const options = [
+        {
+          label: '🔥 [XÓA TẤT CẢ PHIÊN BẢN CLONE]',
+          description: 'Xóa toàn bộ tất cả bản Clone và khu vực khỏi hệ thống!',
+          value: 'DELETE_ALL_DATA'
+        },
+        ...allLinks.map(item => ({
+          label: `📌 ${item.category}`,
+          description: `Chọn để quản lý xóa khu vực của ${item.category}`,
+          value: item.category
+        }))
+      ];
 
       const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('admin_select_delete_item')
-        .setPlaceholder(`--- Chọn bản Clone cần xóa (${region.toUpperCase()}) ---`)
+        .setCustomId('admin_select_remove_category')
+        .setPlaceholder('--- Chọn mục Clone muốn xóa ---')
         .addOptions(options.slice(0, 25));
 
-      const menuEmbed = createBotEmbed({
-        title: `🗑️ XÓA PHIÊN BẢN CLONE (${region.toUpperCase()})`,
-        description: 'Vui lòng chọn bản Clone bạn muốn xóa khỏi cơ sở dữ liệu:',
-        color: COLORS.ERROR
-      });
-
       return await interaction.reply({
-        embeds: [menuEmbed],
+        embeds: [createBotEmbed({
+          title: '🗑️ XÓA PHIÊN BẢN CLONE',
+          description: 'Chọn mục Clone cụ thể hoặc chọn **[XÓA TẤT CẢ]** để làm sạch cơ sở dữ liệu:',
+          color: COLORS.ERROR
+        })],
         components: [new ActionRowBuilder().addComponents(selectMenu)],
         ephemeral: true
       });
@@ -575,8 +561,8 @@ client.on('interactionCreate', async interaction => {
             value: [
               '`/setuppanel` — Tạo bảng điều khiển lấy link.',
               '`/setlinkclone category:<mục> region:<Global/VNG> link:<URL> status:<trạng-thái>` — Cập nhật link Premium.',
-              '`/setstatus region:<Global/VNG>` — Chọn bản Clone để đổi nhanh trạng thái.',
-              '`/deletelink region:<Global/VNG>` — Chọn bản Clone để xóa.',
+              '`/setstatus` — Chọn mục Clone để thay đổi trạng thái nhanh.',
+              '`/removelink` — Xóa mục Clone theo khu vực hoặc xóa tất cả.',
               '`/createkey duration:<thời-hạn> target_user:<member>` — Tạo key kích hoạt.'
             ].join('\n')
           },
@@ -730,10 +716,15 @@ client.on('interactionCreate', async interaction => {
       const note = interaction.options.getString('note') || 'Không có ghi chú thêm';
 
       let linkDoc = await LinkModel.findOne({ category });
-      if (!linkDoc) linkDoc = new LinkModel({ category, links: { premium: {} } });
+      if (!linkDoc) {
+        linkDoc = new LinkModel({ category, links: { premium: {} } });
+      }
 
+      if (!linkDoc.links) linkDoc.links = {};
       if (!linkDoc.links.premium) linkDoc.links.premium = {};
+
       linkDoc.links.premium[region] = { url: link, version, note, status };
+      linkDoc.markModified('links');
 
       await linkDoc.save();
 
@@ -1056,7 +1047,7 @@ client.on('interactionCreate', async interaction => {
       const [, , type, region] = customId.split('_');
 
       const allLinks = await LinkModel.find({});
-      const filteredLinks = allLinks.filter(item => item.links?.premium?.[region]?.url);
+      const filteredLinks = allLinks.filter(item => item.links?.premium?.[region] && item.links.premium[region].url);
 
       if (filteredLinks.length === 0) {
         return await interaction.reply({
@@ -1166,26 +1157,47 @@ client.on('interactionCreate', async interaction => {
       return await interaction.editReply({ embeds: [resultEmbed] });
     }
 
-    if (customId === 'admin_select_setstatus_item') {
-      const [category, region] = interaction.values[0].split('|');
+    if (customId === 'admin_select_setstatus_category') {
+      const category = interaction.values[0];
+
+      const regionSelect = new StringSelectMenuBuilder()
+        .setCustomId(`admin_select_setstatus_region|${category}`)
+        .setPlaceholder(`--- Chọn khu vực cho ${category} ---`)
+        .addOptions([
+          { label: '🌍 Global', value: 'global', description: 'Đổi trạng thái bản Global' },
+          { label: '🇻🇳 VNG', value: 'vng', description: 'Đổi trạng thái bản VNG' }
+        ]);
+
+      return await interaction.reply({
+        embeds: [createBotEmbed({
+          title: '⚙️ CHỌN KHU VỰC CẦN CẬP NHẬT',
+          description: `Bạn đã chọn mục **${category}**. Vui lòng chọn khu vực để cập nhật trạng thái:`,
+          color: COLORS.ADMIN
+        })],
+        components: [new ActionRowBuilder().addComponents(regionSelect)],
+        ephemeral: true
+      });
+    }
+
+    if (customId.startsWith('admin_select_setstatus_region|')) {
+      const category = customId.split('|')[1];
+      const region = interaction.values[0];
 
       const statusSelect = new StringSelectMenuBuilder()
         .setCustomId(`admin_change_status_apply|${category}\vert{}${region}`)
-        .setPlaceholder(`--- Chọn Trạng Thái Mới Cho ${category} ---`)
+        .setPlaceholder(`--- Chọn trạng thái mới ---`)
         .addOptions([
           { label: '🟢 Hoạt động', value: 'active', description: 'Cho phép người dùng lấy link tải' },
           { label: '🟡 Đang bảo trì / Chờ update', value: 'maintenance', description: 'Tạm ẩn link và báo bảo trì' },
           { label: '🔴 Ngừng hoạt động', value: 'disabled', description: 'Tắt tính năng tải xuống' }
         ]);
 
-      const embed = createBotEmbed({
-        title: '⚙️ CHỌN TRẠNG THÁI MỚI',
-        description: `Bạn đang đổi trạng thái cho bản **${category}** (${region.toUpperCase()}). Vui lòng chọn trạng thái bên dưới:`,
-        color: COLORS.ADMIN
-      });
-
       return await interaction.reply({
-        embeds: [embed],
+        embeds: [createBotEmbed({
+          title: '⚙️ CHỌN TRẠNG THÁI MỚI',
+          description: `Cập nhật trạng thái cho **${category}** (${region.toUpperCase()}):`,
+          color: COLORS.ADMIN
+        })],
         components: [new ActionRowBuilder().addComponents(statusSelect)],
         ephemeral: true
       });
@@ -1200,6 +1212,7 @@ client.on('interactionCreate', async interaction => {
       const linkDoc = await LinkModel.findOne({ category });
       if (linkDoc && linkDoc.links?.premium?.[region]) {
         linkDoc.links.premium[region].status = newStatus;
+        linkDoc.markModified('links');
         await linkDoc.save();
       }
 
@@ -1218,15 +1231,65 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    if (customId === 'admin_select_delete_item') {
+    if (customId === 'admin_select_remove_category') {
+      const selectedValue = interaction.values[0];
+
+      if (selectedValue === 'DELETE_ALL_DATA') {
+        await interaction.deferReply({ ephemeral: true });
+        await LinkModel.deleteMany({});
+        return await interaction.editReply({
+          embeds: [createBotEmbed({
+            title: '🔥 TẤT CẢ DỮ LIỆU ĐÃ BỊ XÓA',
+            description: 'Đã xóa toàn bộ tất cả bản Clone và các khu vực ra khỏi cơ sở dữ liệu!',
+            color: COLORS.ERROR
+          })]
+        });
+      }
+
+      const category = selectedValue;
+      const removeOptionSelect = new StringSelectMenuBuilder()
+        .setCustomId(`admin_apply_remove_action|${category}`)
+        .setPlaceholder(`--- Chọn tùy chọn xóa cho ${category} ---`)
+        .addOptions([
+          { label: '🌍 Xóa Khu Vực Global', value: 'global', description: `Xóa dữ liệu Global của ${category}` },
+          { label: '🇻🇳 Xóa Khu Vực VNG', value: 'vng', description: `Xóa dữ liệu VNG của ${category}` },
+          { label: '❌ Xóa Toàn Bộ Mục Này', value: 'all', description: `Xóa cả Global và VNG của ${category}` }
+        ]);
+
+      return await interaction.reply({
+        embeds: [createBotEmbed({
+          title: '🗑️ TÙY CHỌN XÓA DỮ LIỆU',
+          description: `Bạn đang thực hiện xóa **${category}**. Vui lòng chọn phạm vi xóa bên dưới:`,
+          color: COLORS.ERROR
+        })],
+        components: [new ActionRowBuilder().addComponents(removeOptionSelect)],
+        ephemeral: true
+      });
+    }
+
+    if (customId.startsWith('admin_apply_remove_action|')) {
       await interaction.deferReply({ ephemeral: true });
 
-      const [category, region] = interaction.values[0].split('|');
+      const category = customId.split('|')[1];
+      const targetAction = interaction.values[0];
+
+      if (targetAction === 'all') {
+        await LinkModel.deleteOne({ category });
+        return await interaction.editReply({
+          embeds: [createBotEmbed({
+            title: '✅ XÓA THÀNH CÔNG',
+            description: `Đã xóa toàn bộ mục **${category}** khỏi cơ sở dữ liệu!`,
+            color: COLORS.SUCCESS
+          })]
+        });
+      }
 
       const linkDoc = await LinkModel.findOne({ category });
       if (linkDoc && linkDoc.links?.premium) {
-        delete linkDoc.links.premium[region];
-        if (Object.keys(linkDoc.links.premium).length === 0) {
+        delete linkDoc.links.premium[targetAction];
+        linkDoc.markModified('links');
+
+        if (!linkDoc.links.premium.global && !linkDoc.links.premium.vng) {
           await LinkModel.deleteOne({ category });
         } else {
           await linkDoc.save();
@@ -1235,8 +1298,8 @@ client.on('interactionCreate', async interaction => {
 
       return await interaction.editReply({
         embeds: [createBotEmbed({
-          title: '✅ Xóa Bản Clone Thành Công',
-          description: `Đã xóa bản Clone **${category}** ở khu vực **${region.toUpperCase()}** khỏi hệ thống!`,
+          title: '✅ XÓA KHU VỰC THÀNH CÔNG',
+          description: `Đã xóa dữ liệu khu vực **${targetAction.toUpperCase()}** của mục **${category}**!`,
           color: COLORS.SUCCESS
         })]
       });
