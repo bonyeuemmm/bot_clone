@@ -1,6 +1,5 @@
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Collection, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const mongoose = require('mongoose');
-const crypto = require('crypto'); // Sử dụng để tạo Token và 2FA ngẫu nhiên bảo mật
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -24,8 +23,6 @@ const FOOTER_ICON_URL = 'https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png';
 mongoose.connect(MONGO_URI)
   .then(() => console.log('🍃 Kết nối MongoDB thành công!'))
   .catch(err => console.error('❌ Lỗi kết nối MongoDB:', err));
-
-/* ---------------- SCHEMA DỮ LIỆU MONGODB ---------------- */
 
 const KeySchema = new mongoose.Schema({
   key: { type: String, required: true, unique: true },
@@ -55,22 +52,11 @@ const UserSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true }
 });
 
-// --- SCHEMA MỚI TÍCH HỢP QUẢN LÝ TOKEN & 2FA WEBSITE ---
-const AuthWebSchema = new mongoose.Schema({
-  userId: { type: String, required: true, unique: true },
-  token: { type: String, required: true, unique: true },
-  twoFactorCode: { type: String, default: null },
-  twoFactorExpiresAt: { type: Number, default: 0 },
-  pcoin: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now }
-});
-
 const KeyModel = mongoose.model('Key', KeySchema);
 const AccessModel = mongoose.model('Access', AccessSchema);
 const LinkModel = mongoose.model('Link', LinkSchema);
 const AdminModel = mongoose.model('Admin', AdminSchema);
 const UserModel = mongoose.model('User', UserSchema);
-const AuthWebModel = mongoose.model('AuthWeb', AuthWebSchema);
 
 const client = new Client({ 
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] 
@@ -152,8 +138,6 @@ async function autoScanAndCleanExpiredKeys() {
 }
 
 setInterval(autoScanAndCleanExpiredKeys, 30000);
-
-/* ---------------- KHAI BÁO LỆNH SLASH COMMANDS ---------------- */
 
 const commands = [
   new SlashCommandBuilder()
@@ -265,22 +249,7 @@ const commands = [
       .setName('message')
       .setDescription('Nội dung thông báo muốn gửi')
       .setRequired(true)
-      .setMaxLength(2000)),
-
-  // --- CÁC LỆNH MỚI QUẢN LÝ WEBSITE TOKEN & 2FA ---
-  new SlashCommandBuilder()
-    .setName('gettoken')
-    .setDescription('Lấy hoặc tạo mới Token cá nhân dùng để đăng nhập Website'),
-
-  new SlashCommandBuilder()
-    .setName('get2fa')
-    .setDescription('Lấy mã xác nhận 2FA (có hiệu lực trong 5 phút) để xác thực đăng nhập Website'),
-
-  new SlashCommandBuilder()
-    .setName('resettoken')
-    .setDescription('Cấp lại Token mới cho người dùng (Chỉ Admin/Owner)')
-    .addUserOption(option => option.setName('target').setDescription('Người dùng cần cấp lại Token').setRequired(true))
-
+      .setMaxLength(2000))
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -297,16 +266,6 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 function generateRandomKey() {
   const randomDigits = Math.floor(100000 + Math.random() * 900000);
   return `pain_${randomDigits}`;
-}
-
-// Hàm sinh Token ngẫu nhiên cho Web
-function generateWebToken() {
-  return 'PAIN_WEB_' + crypto.randomBytes(16).toString('hex').toUpperCase();
-}
-
-// Hàm sinh mã 2FA 6 chữ số ngẫu nhiên
-function generate2FACode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 async function isBotAdmin(userId) {
@@ -353,8 +312,6 @@ async function getValidAccessKey(userId) {
 
   return userData;
 }
-
-/* ---------------- XỬ LÝ TƯƠNG TÁC LỆNH DISCORD ---------------- */
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.guildId) {
@@ -409,114 +366,6 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
-
-    // --- LỆNH XỬ LÝ TOKEN WEBSITE (/gettoken) ---
-    if (commandName === 'gettoken') {
-      let webUser = await AuthWebModel.findOne({ userId: interaction.user.id });
-
-      if (!webUser) {
-        const newToken = generateWebToken();
-        webUser = await AuthWebModel.create({
-          userId: interaction.user.id,
-          token: newToken
-        });
-      }
-
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '🔑 TOKEN ĐĂNG NHẬP WEBSITE',
-            description: 'Dưới đây là mã Token bảo mật của bạn. Vui lòng giữ kín và không chia sẻ cho người khác!',
-            fields: [
-              { name: '🛡️ Token Website của bạn', value: `\`\`\`\n${webUser.token}\n\`\`\``, inline: false },
-              { name: '💡 Hướng dẫn', value: 'Copy chuỗi token trên và dán vào ô **XÁC THỰC TOKEN** trên Web.', inline: false }
-            ],
-            user: interaction.user,
-            color: COLORS.SUCCESS
-          })
-        ],
-        ephemeral: true
-      });
-    }
-
-    // --- LỆNH XỬ LÝ MÃ 2FA WEBSITE (/get2fa) ---
-    if (commandName === 'get2fa') {
-      let webUser = await AuthWebModel.findOne({ userId: interaction.user.id });
-
-      if (!webUser) {
-        return await interaction.reply({
-          embeds: [
-            createBotEmbed({
-              title: '❌ Chưa Có Token',
-              description: 'Bạn chưa tạo Token! Vui lòng dùng lệnh `/gettoken` trước khi lấy mã 2FA.',
-              color: COLORS.ERROR
-            })
-          ],
-          ephemeral: true
-        });
-      }
-
-      const code2FA = generate2FACode();
-      const expiresAt = Date.now() + 5 * 60 * 1000; // Hết hạn trong 5 phút
-
-      webUser.twoFactorCode = code2FA;
-      webUser.twoFactorExpiresAt = expiresAt;
-      await webUser.save();
-
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '🔐 MÃ XÁC THỰC 2FA WEBSITE',
-            description: 'Sử dụng mã 6 chữ số dưới đây để hoàn tất bước đăng nhập trên Web.',
-            fields: [
-              { name: '🔢 Mã 2FA của bạn', value: `\`\`\`\n${code2FA}\n\`\`\``, inline: true },
-              { name: '⏱️ Thời gian hiệu lực', value: `<t:${Math.floor(expiresAt / 1000)}:R>`, inline: true }
-            ],
-            user: interaction.user,
-            color: COLORS.ADMIN
-          })
-        ],
-        ephemeral: true
-      });
-    }
-
-    // --- LỆNH CẤP LẠI TOKEN DÀNH CHO ADMIN (/resettoken) ---
-    if (commandName === 'resettoken') {
-      if (!(await isBotAdmin(interaction.user.id))) {
-        return await interaction.reply({
-          embeds: [createBotEmbed({ title: '❌ Quyền truy cập bị từ chối', description: 'Bạn không đủ thẩm quyền!', color: COLORS.ERROR })],
-          ephemeral: true
-        });
-      }
-
-      const targetUser = interaction.options.getUser('target', true);
-      const newToken = generateWebToken();
-
-      await AuthWebModel.updateOne(
-        { userId: targetUser.id },
-        { token: newToken, twoFactorCode: null, twoFactorExpiresAt: 0 },
-        { upsert: true }
-      );
-
-      await sendOwnerLog('Cấp lại Web Token', [
-        { name: 'Người nhận', value: `${targetUser.tag} (${targetUser.id})`, inline: true },
-        { name: 'Token mới', value: `\`${newToken}\``, inline: false }
-      ], interaction.user);
-
-      return await interaction.reply({
-        embeds: [
-          createBotEmbed({
-            title: '🔄 CẤP LẠI TOKEN THÀNH CÔNG',
-            description: `Đã đổi Token Web mới cho thành viên: **${targetUser.tag}**`,
-            fields: [
-              { name: '🔑 Token Mới', value: `\`\`\`\n${newToken}\n\`\`\``, inline: false }
-            ],
-            color: COLORS.SUCCESS
-          })
-        ],
-        ephemeral: true
-      });
-    }
 
     if (commandName === 'getclonepre') {
       if (!(await getValidAccessKey(interaction.user.id))) {
@@ -765,9 +614,7 @@ client.on('interactionCreate', async interaction => {
               '`/getclonepre region:<Global/VNG>` — Lấy link Clone Premium (Cần Key).',
               '`/getclonefree region:<Global/VNG>` — Lấy link Clone Miễn Phí.',
               '`/redeemkey key:<mã-key>` — Nhập key kích hoạt.',
-              '`/status` — Kiểm tra thời hạn sử dụng bot còn lại.',
-              '`/gettoken` — Lấy Token đăng nhập Website.',
-              '`/get2fa` — Lấy mã 2FA xác nhận đăng nhập Web.'
+              '`/status` — Kiểm tra thời hạn sử dụng bot còn lại.'
             ].join('\n')
           },
           {
@@ -776,8 +623,7 @@ client.on('interactionCreate', async interaction => {
               '`/setlinkclone type:<Free/Premium> category:<mục> region:<Global/VNG> link:<URL> status:<trạng-thái>` — Cập nhật link.',
               '`/setstatus` — Chọn mục Clone & khu vực để thay đổi trạng thái nhanh.',
               '`/removelink` — Xóa mục Clone theo khu vực cụ thể hoặc xóa tất cả.',
-              '`/createkey duration:<thời-hạn> target_user:<member>` — Tạo key kích hoạt.',
-              '`/resettoken target:<member>` — Đổi Token Web mới cho người dùng.'
+              '`/createkey duration:<thời-hạn> target_user:<member>` — Tạo key kích hoạt.'
             ].join('\n')
           },
           {
