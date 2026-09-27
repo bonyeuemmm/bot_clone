@@ -1,5 +1,9 @@
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Collection, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
+// ⚠️ Cần cài thêm 2 gói này để chạy API cho Website: npm install express cors
+const express = require('express');
+const cors = require('cors');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -52,11 +56,26 @@ const UserSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true }
 });
 
+// --- SCHEMA CHO HỆ THỐNG ĐĂNG NHẬP WEBSITE (TOKEN + 2FA) ---
+const WebAuthSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true },
+  token: { type: String, required: true, unique: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const TwoFactorSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true },
+  code: { type: String, required: true },
+  expiresAt: { type: Number, required: true }
+});
+
 const KeyModel = mongoose.model('Key', KeySchema);
 const AccessModel = mongoose.model('Access', AccessSchema);
 const LinkModel = mongoose.model('Link', LinkSchema);
 const AdminModel = mongoose.model('Admin', AdminSchema);
 const UserModel = mongoose.model('User', UserSchema);
+const WebAuthModel = mongoose.model('WebAuth', WebAuthSchema);
+const TwoFactorModel = mongoose.model('TwoFactor', TwoFactorSchema);
 
 const client = new Client({ 
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] 
@@ -239,6 +258,18 @@ const commands = [
     .addStringOption(option => option.setName('key').setDescription('Key cần xóa').setRequired(true)),
 
   new SlashCommandBuilder()
+    .setName('token')
+    .setDescription('Lấy Token đăng nhập Website')
+    .addBooleanOption(option =>
+      option.setName('reset')
+        .setDescription('Tạo lại Token mới (Token cũ sẽ ngừng hoạt động)')
+        .setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('2fa')
+    .setDescription('Lấy mã xác thực 2FA để đăng nhập Website (hết hạn sau 5 phút)'),
+
+  new SlashCommandBuilder()
     .setName('help')
     .setDescription('Hướng dẫn sử dụng bot'),
 
@@ -266,6 +297,15 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 function generateRandomKey() {
   const randomDigits = Math.floor(100000 + Math.random() * 900000);
   return `pain_${randomDigits}`;
+}
+
+// --- HÀM TẠO TOKEN & MÃ 2FA CHO HỆ THỐNG ĐĂNG NHẬP WEBSITE ---
+function generateWebToken() {
+  return `pain_tok_${crypto.randomBytes(20).toString('hex')}`;
+}
+
+function generate2FACode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 async function isBotAdmin(userId) {
@@ -600,6 +640,87 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
+    if (commandName === 'token') {
+      const wantReset = interaction.options.getBoolean('reset') || false;
+      let record = await WebAuthModel.findOne({ userId: interaction.user.id });
+
+      if (wantReset || !record) {
+        const newToken = generateWebToken();
+
+        if (record) {
+          record.token = newToken;
+          record.createdAt = new Date();
+          await record.save();
+        } else {
+          record = await WebAuthModel.create({ userId: interaction.user.id, token: newToken });
+        }
+
+        return await interaction.reply({
+          embeds: [createBotEmbed({
+            title: wantReset ? '🔄 Token Đã Được Làm Mới' : '🔑 Token Đăng Nhập Website',
+            description: [
+              'Đây là Token dùng để đăng nhập vào **Website**:',
+              `\`\`\`${record.token}\`\`\``,
+              '',
+              '⚠️ **TUYỆT ĐỐI KHÔNG chia sẻ Token này cho bất kỳ ai!** Bất kỳ ai có Token đều có thể đăng nhập vào tài khoản Website của bạn.',
+              '',
+              'Sau khi nhập Token trên Website, dùng thêm lệnh `/2fa` để lấy mã xác thực bước 2.'
+            ].join('\n'),
+            user: interaction.user,
+            locale: userLocale,
+            color: wantReset ? COLORS.ADMIN : COLORS.DEFAULT
+          })],
+          ephemeral: true
+        });
+      }
+
+      return await interaction.reply({
+        embeds: [createBotEmbed({
+          title: '🔑 Token Đăng Nhập Website',
+          description: [
+            'Token hiện tại của bạn:',
+            `\`\`\`${record.token}\`\`\``,
+            '',
+            '⚠️ **TUYỆT ĐỐI KHÔNG chia sẻ Token này cho bất kỳ ai!** Bất kỳ ai có Token đều có thể đăng nhập vào tài khoản Website của bạn.',
+            '',
+            'Muốn tạo Token mới? Dùng `/token reset:true`.'
+          ].join('\n'),
+          user: interaction.user,
+          locale: userLocale,
+          color: COLORS.DEFAULT
+        })],
+        ephemeral: true
+      });
+    }
+
+    if (commandName === '2fa') {
+      const code = generate2FACode();
+      const expiresAt = Date.now() + 5 * 60 * 1000;
+
+      await TwoFactorModel.updateOne(
+        { userId: interaction.user.id },
+        { userId: interaction.user.id, code, expiresAt },
+        { upsert: true }
+      );
+
+      return await interaction.reply({
+        embeds: [createBotEmbed({
+          title: '🔐 Mã Xác Thực 2FA',
+          description: [
+            'Mã xác thực đăng nhập Website của bạn là:',
+            `\`\`\`${code}\`\`\``,
+            '',
+            `⏰ Mã sẽ **hết hạn sau 5 phút** (<t:${Math.floor(expiresAt / 1000)}:R>).`,
+            '⚠️ **TUYỆT ĐỐI KHÔNG chia sẻ mã này cho bất kỳ ai!**'
+          ].join('\n'),
+          user: interaction.user,
+          locale: userLocale,
+          color: COLORS.SUCCESS
+        })],
+        ephemeral: true
+      });
+    }
+
     if (commandName === 'help') {
       const helpEmbed = createBotEmbed({
         title: '📖 Hướng dẫn sử dụng hệ thống',
@@ -614,7 +735,9 @@ client.on('interactionCreate', async interaction => {
               '`/getclonepre region:<Global/VNG>` — Lấy link Clone Premium (Cần Key).',
               '`/getclonefree region:<Global/VNG>` — Lấy link Clone Miễn Phí.',
               '`/redeemkey key:<mã-key>` — Nhập key kích hoạt.',
-              '`/status` — Kiểm tra thời hạn sử dụng bot còn lại.'
+              '`/status` — Kiểm tra thời hạn sử dụng bot còn lại.',
+              '`/token` — Lấy Token đăng nhập Website (thêm `reset:true` để tạo lại).',
+              '`/2fa` — Lấy mã xác thực 2FA để đăng nhập Website.'
             ].join('\n')
           },
           {
@@ -1327,6 +1450,79 @@ client.on('interactionCreate', async interaction => {
 
 client.once('ready', () => { 
   console.log(`🤖 Bot ${client.user.tag} đã sẵn sàng hoạt động!`); 
+});
+
+// ================= API CHO WEBSITE ĐĂNG NHẬP (TOKEN + 2FA) =================
+// index.html sẽ gọi 2 endpoint bên dưới để xác thực Token và mã 2FA.
+// ⚠️ Nhớ mở cổng WEB_API_PORT ra ngoài Internet (hoặc dùng reverse proxy/HTTPS)
+// và sửa hằng số AUTH_API_BASE trong index.html trỏ đúng về domain/IP của server này.
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Bước 1: Website gửi Token lên để kiểm tra Token có tồn tại không
+app.post('/api/auth/verify-token', async (req, res) => {
+  try {
+    const { token } = req.body || {};
+    if (!token) return res.status(400).json({ success: false, message: 'Thiếu Token.' });
+
+    const record = await WebAuthModel.findOne({ token });
+    if (!record) return res.status(401).json({ success: false, message: 'Token không hợp lệ.' });
+
+    return res.json({ success: true, message: 'Token hợp lệ, vui lòng nhập mã 2FA.' });
+  } catch (err) {
+    console.error('Lỗi verify-token:', err);
+    return res.status(500).json({ success: false, message: 'Lỗi máy chủ, vui lòng thử lại sau.' });
+  }
+});
+
+// Bước 2: Website gửi Token + mã 2FA để hoàn tất đăng nhập
+app.post('/api/auth/verify-2fa', async (req, res) => {
+  try {
+    const { token, code } = req.body || {};
+    if (!token || !code) return res.status(400).json({ success: false, message: 'Thiếu Token hoặc mã 2FA.' });
+
+    const authRecord = await WebAuthModel.findOne({ token });
+    if (!authRecord) return res.status(401).json({ success: false, message: 'Token không hợp lệ.' });
+
+    const twoFaRecord = await TwoFactorModel.findOne({ userId: authRecord.userId });
+    if (!twoFaRecord) {
+      return res.status(401).json({ success: false, message: 'Bạn chưa lấy mã 2FA. Dùng lệnh /2fa trên Discord trước.' });
+    }
+
+    if (Date.now() > twoFaRecord.expiresAt) {
+      await TwoFactorModel.deleteOne({ userId: authRecord.userId });
+      return res.status(401).json({ success: false, message: 'Mã 2FA đã hết hạn. Vui lòng lấy mã mới bằng /2fa.' });
+    }
+
+    if (twoFaRecord.code !== String(code).trim()) {
+      return res.status(401).json({ success: false, message: 'Mã 2FA không chính xác.' });
+    }
+
+    // Mã 2FA chỉ dùng được đúng 1 lần
+    await TwoFactorModel.deleteOne({ userId: authRecord.userId });
+
+    const discordUser = await client.users.fetch(authRecord.userId);
+
+    return res.json({
+      success: true,
+      token: authRecord.token,
+      user: {
+        id: discordUser.id,
+        username: discordUser.username,
+        displayName: discordUser.globalName || discordUser.username,
+        avatarURL: discordUser.displayAvatarURL({ dynamic: true, size: 256 })
+      }
+    });
+  } catch (err) {
+    console.error('Lỗi verify-2fa:', err);
+    return res.status(500).json({ success: false, message: 'Lỗi máy chủ, vui lòng thử lại sau.' });
+  }
+});
+
+const WEB_API_PORT = process.env.WEB_API_PORT || 3000;
+app.listen(WEB_API_PORT, () => {
+  console.log(`🌐 API đăng nhập Website đang chạy tại cổng ${WEB_API_PORT}`);
 });
 
 client.login(TOKEN);
