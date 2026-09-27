@@ -6,7 +6,9 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "cors": "^2.8.5",
     "discord.js": "^14.14.1",
+    "express": "^4.19.2",
     "mongoose": "^8.0.0"
   }
 }
