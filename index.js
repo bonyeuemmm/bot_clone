@@ -293,15 +293,25 @@ function generateRandomKey() {
   return `pain_${randomDigits}`;
 }
 
-// --- TOKEN ĐĂNG NHẬP WEBSITE (dùng cho lệnh /token) ---
+// --- TOKEN ĐĂNG NHẬP WEBSITE (dùng cho lệnh /token): pain_xxxxxxxxxxxxxxx ---
+const TOKEN_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 function generateLoginToken() {
-  return `pain_tok_${crypto.randomBytes(16).toString('hex')}`;
+  let random = '';
+  for (let i = 0; i < 15; i++) {
+    random += TOKEN_CHARS[crypto.randomInt(0, TOKEN_CHARS.length)];
+  }
+  return `pain_${random}`;
 }
 
-// --- MÃ 2FA 6 CHỮ SỐ, HẾT HẠN SAU 5 PHÚT (dùng cho lệnh /2fa) ---
+// --- MÃ 2FA 6 KÝ TỰ (CHỮ + SỐ) NGẪU NHIÊN, HẾT HẠN SAU 5 PHÚT (dùng cho lệnh /2fa) ---
 const TWOFA_TTL_MS = 5 * 60 * 1000;
+const TWOFA_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 function generate2FACode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += TWOFA_CHARS[crypto.randomInt(0, TWOFA_CHARS.length)];
+  }
+  return code;
 }
 
 async function isBotAdmin(userId) {
