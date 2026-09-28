@@ -61,6 +61,8 @@ const AuthSchema = new mongoose.Schema({
   token: { type: String, required: true, unique: true },
   twoFACode: String,
   twoFACodeExpiresAt: Number,
+  sessionId: String,          // phiên đăng nhập đang hoạt động (chỉ 1 thiết bị/token)
+  sessionCreatedAt: Number,   // thời điểm đăng nhập của phiên hiện tại
   createdAt: { type: Number, default: () => Date.now() }
 });
 
@@ -274,7 +276,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('2fa')
-    .setDescription('Lấy mã 2FA (6 số, hết hạn sau 5 phút) để hoàn tất đăng nhập Website')
+    .setDescription('Lấy mã 2FA (6 ký tự, hết hạn sau 5 phút) để hoàn tất đăng nhập Website')
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -293,11 +295,11 @@ function generateRandomKey() {
   return `pain_${randomDigits}`;
 }
 
-// --- TOKEN ĐĂNG NHẬP WEBSITE (dùng cho lệnh /token): pain_xxxxxxxxxxxxxxx ---
+// --- TOKEN ĐĂNG NHẬP WEBSITE (dùng cho lệnh /token): pain_ + 20 ký tự ngẫu nhiên ---
 const TOKEN_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 function generateLoginToken() {
   let random = '';
-  for (let i = 0; i < 15; i++) {
+  for (let i = 0; i < 20; i++) {
     random += TOKEN_CHARS[crypto.randomInt(0, TOKEN_CHARS.length)];
   }
   return `pain_${random}`;
@@ -312,6 +314,18 @@ function generate2FACode() {
     code += TWOFA_CHARS[crypto.randomInt(0, TWOFA_CHARS.length)];
   }
   return code;
+}
+
+// --- PHIÊN ĐĂNG NHẬP WEBSITE: tự hết hạn sau 4 ngày, mỗi token chỉ 1 thiết bị ---
+const SESSION_TTL_MS = 4 * 24 * 60 * 60 * 1000;
+function generateSessionId() {
+  return crypto.randomBytes(24).toString('hex');
+}
+function isSessionValid(authDoc, sessionId) {
+  if (!authDoc || !sessionId || !authDoc.sessionId) return false;
+  if (authDoc.sessionId !== sessionId) return false; // đã đăng nhập ở thiết bị khác / token bị reset
+  if (!authDoc.sessionCreatedAt || Date.now() - authDoc.sessionCreatedAt > SESSION_TTL_MS) return false;
+  return true;
 }
 
 async function isBotAdmin(userId) {
@@ -663,11 +677,10 @@ client.on('interactionCreate', async interaction => {
           embeds: [createBotEmbed({
             title: wantReset ? '🔁 Đã Reset Token Website' : '🔑 Token Đăng Nhập Website',
             description: [
-              `Token mới của bạn:\n\`\`\`${authDoc.token}\`\`\``,
-              '',
               '⚠️ **TUYỆT ĐỐI KHÔNG chia sẻ token này cho bất kỳ ai khác!** Ai có token này có thể đăng nhập vào tài khoản Website của bạn.',
-              wantReset ? 'Token cũ đã ngừng hoạt động ngay lập tức.' : 'Dùng lệnh `/token reset:true` bất cứ lúc nào nếu muốn tạo Token mới.'
+              wantReset ? 'Token cũ đã ngừng hoạt động ngay lập tức.' : 'Dùng lệnh /token reset:true bất cứ lúc nào nếu muốn tạo Token mới.'
             ].join('\n'),
+            fields: [{ name: 'Token mới của bạn', value: authDoc.token }],
             user: interaction.user,
             locale: userLocale,
             color: COLORS.SUCCESS
@@ -680,11 +693,10 @@ client.on('interactionCreate', async interaction => {
         embeds: [createBotEmbed({
           title: '🔑 Token Đăng Nhập Website',
           description: [
-            `Token của bạn:\n\`\`\`${authDoc.token}\`\`\``,
-            '',
             '⚠️ **TUYỆT ĐỐI KHÔNG chia sẻ token này cho bất kỳ ai khác!** Ai có token này có thể đăng nhập vào tài khoản Website của bạn.',
-            'Dùng lệnh `/token reset:true` bất cứ lúc nào nếu muốn tạo Token mới.'
+            'Dùng lệnh /token reset:true bất cứ lúc nào nếu muốn tạo Token mới.'
           ].join('\n'),
+          fields: [{ name: 'Token của bạn', value: authDoc.token }],
           user: interaction.user,
           locale: userLocale,
           color: COLORS.DEFAULT
@@ -708,12 +720,11 @@ client.on('interactionCreate', async interaction => {
         embeds: [createBotEmbed({
           title: '🔐 Mã Xác Thực 2FA',
           description: [
-            `Mã 2FA của bạn:\n\`\`\`${code}\`\`\``,
-            '',
             '⏰ Mã sẽ hết hạn sau **5 phút**.',
             '⚠️ **TUYỆT ĐỐI KHÔNG chia sẻ mã này cho bất kỳ ai khác!**',
             'Nhập đúng mã này trên Website (sau khi nhập Token) mới có thể hoàn tất đăng nhập. Lưu ý: đăng nhập Website là **không bắt buộc**, bạn vẫn có thể duyệt web bình thường mà không cần đăng nhập.'
           ].join('\n'),
+          fields: [{ name: 'Mã 2FA của bạn', value: code }],
           user: interaction.user,
           locale: userLocale,
           color: COLORS.ADMIN
@@ -738,7 +749,7 @@ client.on('interactionCreate', async interaction => {
               '`/redeemkey key:<mã-key>` — Nhập key kích hoạt.',
               '`/status` — Kiểm tra thời hạn sử dụng bot còn lại.',
               '`/token reset:<true/false>` — Lấy (hoặc reset) Token đăng nhập Website (không bắt buộc).',
-              '`/2fa` — Lấy mã 2FA 6 số để hoàn tất đăng nhập Website.'
+              '`/2fa` — Lấy mã 2FA 6 ký tự để hoàn tất đăng nhập Website.'
             ].join('\n')
           },
           {
@@ -985,9 +996,9 @@ client.on('interactionCreate', async interaction => {
                 user: fetchedTargetUser,
                 locale: userLocale,
                 fields: [
-                  { name: 'Mã Key', value: `\`\`\`\n${generatedKey}\n\`\`\`` },
+                  { name: 'Mã Key', value: generatedKey },
                   { name: 'Thời hạn', value: durationText },
-                  { name: 'Hướng dẫn', value: `Sử dụng lệnh \`/redeemkey key:${generatedKey}\` để mở khóa bot.` }
+                  { name: 'Hướng dẫn', value: 'Sử dụng lệnh /redeemkey và nhập Mã Key ở trên để mở khóa bot.' }
                 ],
                 color: COLORS.MEMBER
               })
@@ -1002,7 +1013,7 @@ client.on('interactionCreate', async interaction => {
 
       // GỬI LOG VỀ OWNER
       await sendOwnerLog('Tạo Key Mới', [
-        { name: 'Mã Key', value: `\`${generatedKey}\``, inline: true },
+        { name: 'Mã Key', value: generatedKey, inline: true },
         { name: 'Thời hạn', value: durationText, inline: true },
         { name: 'Gửi DM cho', value: targetUser ? targetUser.tag : 'Không chọn', inline: true }
       ], interaction.user);
@@ -1014,7 +1025,7 @@ client.on('interactionCreate', async interaction => {
             user: interaction.user,
             locale: userLocale,
             fields: [
-              { name: 'Mã Key', value: `\`\`\`\n${generatedKey}\n\`\`\``, inline: false },
+              { name: 'Mã Key', value: generatedKey, inline: false },
               { name: 'Thời hạn', value: durationText, inline: true },
               { name: 'Trạng thái DM', value: isDirectSent ? '✅ Đã gửi DM' : (targetUser ? '❌ Lỗi gửi DM' : 'Không gửi'), inline: true }
             ],
@@ -1047,7 +1058,8 @@ client.on('interactionCreate', async interaction => {
         embeds: [
           createBotEmbed({
             title: '✅ Đã Xóa Key',
-            description: `Đã xóa vĩnh viễn key chưa sử dụng:\n\`\`\`\n${userKey}\n\`\`\``,
+            description: 'Đã xóa vĩnh viễn key chưa sử dụng.',
+            fields: [{ name: 'Mã Key', value: userKey }],
             user: interaction.user,
             locale: userLocale,
             color: COLORS.OWNER
@@ -1066,7 +1078,8 @@ client.on('interactionCreate', async interaction => {
           embeds: [
             createBotEmbed({
               title: '❌ Key Không Hợp Lệ',
-              description: `Mã key:\n\`\`\`\n${userKey}\n\`\`\`\nkhông tồn tại hoặc đã nhập sai!`,
+              description: 'Key không tồn tại hoặc đã nhập sai!',
+              fields: [{ name: 'Mã Key', value: userKey }],
               user: interaction.user,
               locale: userLocale,
               color: COLORS.ERROR
@@ -1108,10 +1121,11 @@ client.on('interactionCreate', async interaction => {
         embeds: [
           createBotEmbed({
             title: '🎉 Kích Hoạt Thành Công',
-            description: `Bạn đã kích hoạt thành công key:\n\`\`\`\n${userKey}\n\`\`\``,
+            description: 'Bạn đã kích hoạt thành công key.',
             user: interaction.user,
             locale: userLocale,
             fields: [
+              { name: 'Mã Key', value: userKey },
               { name: 'Thời hạn hết hạn', value: formatExpiry(newExpiresAt) }
             ],
             color: COLORS.SUCCESS
@@ -1515,6 +1529,9 @@ app.post('/api/login/2fa', async (req, res) => {
     // Mã 2FA chỉ dùng được 1 lần
     authDoc.twoFACode = undefined;
     authDoc.twoFACodeExpiresAt = undefined;
+    // Tạo phiên mới: phiên cũ ở thiết bị khác sẽ tự bị đăng xuất
+    authDoc.sessionId = generateSessionId();
+    authDoc.sessionCreatedAt = Date.now();
     await authDoc.save();
 
     let discordUser = null;
@@ -1522,6 +1539,9 @@ app.post('/api/login/2fa', async (req, res) => {
 
     return res.json({
       success: true,
+      sessionId: authDoc.sessionId,
+      loginAt: authDoc.sessionCreatedAt,
+      expiresAt: authDoc.sessionCreatedAt + SESSION_TTL_MS,
       user: discordUser ? buildPublicUser(discordUser) : { username: 'unknown', displayName: 'Unknown', avatar: null }
     });
   } catch (err) {
@@ -1533,9 +1553,11 @@ app.post('/api/login/2fa', async (req, res) => {
 // Lấy lại thông tin Discord mới nhất cho phiên đăng nhập đã lưu ở trình duyệt (mở khung "Thông tin")
 app.post('/api/session/profile', async (req, res) => {
   try {
-    const { token } = req.body || {};
+    const { token, sessionId } = req.body || {};
     const authDoc = token && await AuthModel.findOne({ token });
-    if (!authDoc) return res.status(401).json({ success: false, message: 'Token không hợp lệ!' });
+    if (!authDoc || !isSessionValid(authDoc, sessionId)) {
+      return res.status(401).json({ success: false, message: 'Phiên đăng nhập không còn hợp lệ!' });
+    }
 
     let discordUser = null;
     try { discordUser = await client.users.fetch(authDoc.userId); } catch (_e) {}
@@ -1545,6 +1567,25 @@ app.post('/api/session/profile', async (req, res) => {
   } catch (err) {
     console.error('Lỗi /api/session/profile:', err);
     return res.status(500).json({ success: false, message: 'Lỗi máy chủ, vui lòng thử lại!' });
+  }
+});
+
+// Website gọi định kỳ để kiểm tra phiên: hết hạn 4 ngày / đăng nhập nơi khác / token bị reset
+app.post('/api/session/check', async (req, res) => {
+  try {
+    const { token, sessionId } = req.body || {};
+    const authDoc = token ? await AuthModel.findOne({ token }) : null;
+
+    if (!authDoc) return res.json({ success: true, valid: false, reason: 'token_changed' });
+    if (!isSessionValid(authDoc, sessionId)) {
+      const expired = authDoc.sessionId === sessionId && authDoc.sessionCreatedAt &&
+        Date.now() - authDoc.sessionCreatedAt > SESSION_TTL_MS;
+      return res.json({ success: true, valid: false, reason: expired ? 'expired' : 'other_device' });
+    }
+    return res.json({ success: true, valid: true, expiresAt: authDoc.sessionCreatedAt + SESSION_TTL_MS });
+  } catch (err) {
+    console.error('Lỗi /api/session/check:', err);
+    return res.status(500).json({ success: false });
   }
 });
 
