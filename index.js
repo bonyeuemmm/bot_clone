@@ -1468,7 +1468,39 @@ client.on('interactionCreate', async interaction => {
    Website gọi các endpoint dưới đây để đăng nhập bằng Token + 2FA
    ========================================================= */
 const app = express();
-app.use(cors());
+// Railway chạy sau proxy: cần để lấy đúng IP người dùng
+app.set('trust proxy', 1);
+
+// Chỉ cho đúng website của bạn gọi API (thêm tên miền riêng vào mảng nếu sau này có)
+const ALLOWED_ORIGINS = ['https://paintool-website-tai-hack-roblox.onrender.com'];
+app.use(cors({ origin: ALLOWED_ORIGINS }));
+
+// Giới hạn số lần gọi API đăng nhập theo IP (không cần cài thêm package)
+const RATE_WINDOW_MS = 5 * 60 * 1000;
+const RATE_MAX_REQUESTS = 30;
+const rateHits = new Map();
+function loginRateLimit(req, res, next) {
+  const now = Date.now();
+  const entry = rateHits.get(req.ip);
+  if (!entry || now > entry.resetAt) {
+    rateHits.set(req.ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return next();
+  }
+  entry.count++;
+  if (entry.count > RATE_MAX_REQUESTS) {
+    return res.status(429).json({ success: false, message: 'Bạn thao tác quá nhanh, vui lòng thử lại sau vài phút!' });
+  }
+  next();
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateHits) if (now > entry.resetAt) rateHits.delete(ip);
+}, 10 * 60 * 1000);
+
+// Đếm số lần nhập sai mã 2FA theo token: sai 5 lần thì mã 2FA hiện tại bị hủy
+const MAX_2FA_FAILS = 5;
+const twoFAFails = new Map();
+
 app.use(express.json());
 
 function buildPublicUser(discordUser) {
@@ -1480,7 +1512,7 @@ function buildPublicUser(discordUser) {
 }
 
 // Bước 1: kiểm tra Token (chưa cấp quyền đăng nhập, chỉ xác nhận Token đúng)
-app.post('/api/login/token', async (req, res) => {
+app.post('/api/login/token', loginRateLimit, async (req, res) => {
   try {
     const { token } = req.body || {};
     if (!token || typeof token !== 'string') {
@@ -1506,7 +1538,7 @@ app.post('/api/login/token', async (req, res) => {
 });
 
 // Bước 2: kiểm tra mã 2FA, nếu đúng thì trả về thông tin Discord đầy đủ để website lưu phiên đăng nhập
-app.post('/api/login/2fa', async (req, res) => {
+app.post('/api/login/2fa', loginRateLimit, async (req, res) => {
   try {
     const { token, code } = req.body || {};
     if (!token || !code) {
@@ -1523,8 +1555,18 @@ app.post('/api/login/2fa', async (req, res) => {
     }
 
     if (String(code) !== String(authDoc.twoFACode)) {
+      const fails = (twoFAFails.get(token) || 0) + 1;
+      twoFAFails.set(token, fails);
+      if (fails >= MAX_2FA_FAILS) {
+        twoFAFails.delete(token);
+        authDoc.twoFACode = undefined;
+        authDoc.twoFACodeExpiresAt = undefined;
+        await authDoc.save();
+        return res.status(401).json({ success: false, message: 'Nhập sai quá nhiều lần, mã 2FA đã bị hủy. Dùng lệnh /2fa để lấy mã mới!' });
+      }
       return res.status(401).json({ success: false, message: 'Mã 2FA không đúng!' });
     }
+    twoFAFails.delete(token);
 
     // Mã 2FA chỉ dùng được 1 lần
     authDoc.twoFACode = undefined;
@@ -1551,7 +1593,7 @@ app.post('/api/login/2fa', async (req, res) => {
 });
 
 // Lấy lại thông tin Discord mới nhất cho phiên đăng nhập đã lưu ở trình duyệt (mở khung "Thông tin")
-app.post('/api/session/profile', async (req, res) => {
+app.post('/api/session/profile', loginRateLimit, async (req, res) => {
   try {
     const { token, sessionId } = req.body || {};
     const authDoc = token && await AuthModel.findOne({ token });
@@ -1571,7 +1613,7 @@ app.post('/api/session/profile', async (req, res) => {
 });
 
 // Website gọi định kỳ để kiểm tra phiên: hết hạn 4 ngày / đăng nhập nơi khác / token bị reset
-app.post('/api/session/check', async (req, res) => {
+app.post('/api/session/check', loginRateLimit, async (req, res) => {
   try {
     const { token, sessionId } = req.body || {};
     const authDoc = token ? await AuthModel.findOne({ token }) : null;
