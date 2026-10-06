@@ -217,8 +217,8 @@ const commands = [
     .setName('setlinkclone')
     .setDescription('Tải và thiết lập link + phiên bản cho từng mục')
     .addStringOption(opt => opt.setName('type').setDescription('Loại bản Clone (Free hoặc Premium)').setRequired(true).addChoices(
-      { name: '🎁 Free (Miễn phí)', value: 'free' },
-      { name: '👑 Premium (Key VIP)', value: 'premium' }
+      { name: '🎁 Free', value: 'free' },
+      { name: '👑 Premium', value: 'premium' }
     ))
     .addStringOption(opt => opt.setName('category').setDescription('Tên mục (VD: Delta X)').setRequired(true))
     .addStringOption(opt => opt.setName('region').setDescription('Khu vực').setRequired(true).addChoices({ name: 'Global', value: 'global' }, { name: 'VNG', value: 'vng' }))
@@ -1631,9 +1631,33 @@ app.post('/api/session/check', loginRateLimit, async (req, res) => {
   }
 });
 
-const WEB_PORT = process.env.PORT || 3001;
-app.listen(WEB_PORT, () => {
-  console.log(`🌐 API Website đang chạy tại cổng ${WEB_PORT}`);
+/* =========================================================
+   HEALTH CHECK ENDPOINT - CHO UPTIMEROBOT KIỂM TRA MÁY CHỦ
+   ========================================================= */
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    bot: client.isReady() ? 'online' : 'offline'
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    bot_status: client.isReady() ? 'online' : 'offline'
+  });
+});
+
+/* =========================================================
+   RENDER & UPTIMEROBOT COMPATIBLE SERVER CONFIGURATION
+   ========================================================= */
+const PORT = process.env.PORT || 10000;
+const HOST = '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
+  console.log(`✅ API Server running on ${HOST}:${PORT}`);
+  console.log(`🌐 API Website đang chạy tại cổng ${PORT}`);
 });
 
 client.once('ready', () => { 
