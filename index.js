@@ -1,4 +1,567 @@
-eral: true });
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Collection, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const mongoose = require('mongoose');
+const crypto = require('crypto');
+const express = require('express');
+const cors = require('cors');
+
+const TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const OWNER_ID = process.env.OWNER_ID || '1208450889246048306';
+const MONGO_URI = process.env.MONGO_URI;
+
+const MAIN_SERVER_ID = '1454813193028374540';
+const SERVER_INVITE_LINK = 'https://discord.gg/z7RUNArBuJ';
+
+const COLORS = {
+  DEFAULT: 0x9b59b6,
+  MEMBER: 0x3498db,
+  SUCCESS: 0x2ecc71,
+  ADMIN: 0xf1c40f,
+  OWNER: 0xe67e22,
+  ERROR: 0xe74c3c
+};
+
+const FOOTER_ICON_URL = 'https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png';
+
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('🍃 Kết nối MongoDB thành công!'))
+  .catch(err => console.error('❌ Lỗi kết nối MongoDB:', err));
+
+const KeySchema = new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  durationMs: Number,
+  activatedAt: Date,
+  expiresAt: Date
+});
+
+const AccessSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true },
+  expiresAt: Number,
+  durationMs: Number,
+  warned24h: { type: Boolean, default: false },
+  warned4h: { type: Boolean, default: false }
+});
+
+const LinkSchema = new mongoose.Schema({
+  category: { type: String, required: true, unique: true },
+  links: { type: mongoose.Schema.Types.Mixed, default: { free: {}, premium: {} } }
+});
+
+const AdminSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true }
+});
+
+const UserSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true }
+});
+
+const AuthSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true },
+  token: { type: String, required: true, unique: true },
+  twoFACode: String,
+  twoFACodeExpiresAt: Number,
+  sessionId: String,
+  sessionCreatedAt: Number,
+  createdAt: { type: Number, default: () => Date.now() }
+});
+
+const KeyModel = mongoose.model('Key', KeySchema);
+const AccessModel = mongoose.model('Access', AccessSchema);
+const LinkModel = mongoose.model('Link', LinkSchema);
+const AdminModel = mongoose.model('Admin', AdminSchema);
+const UserModel = mongoose.model('User', UserSchema);
+const AuthModel = mongoose.model('Auth', AuthSchema);
+
+const client = new Client({ 
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] 
+});
+
+const commandCooldowns = new Collection();
+const COMMAND_COOLDOWN_MS = 10000;
+
+function formatFooterText() {
+  return 'Bot By PAIN';
+}
+
+function createBotEmbed({ title, description, fields, user, locale = 'vi', color = COLORS.DEFAULT, timestamp = Date.now() } = {}) {
+  const embed = new EmbedBuilder()
+    .setColor(color)
+    .setFooter({ 
+      text: formatFooterText(), 
+      iconURL: FOOTER_ICON_URL 
+    });
+
+  if (user) {
+    embed.setThumbnail(user.displayAvatarURL({ dynamic: true, size: 512 }));
+  }
+
+  if (title) embed.setTitle(title);
+  if (description) embed.setDescription(description);
+  if (fields?.length) embed.addFields(fields);
+
+  return embed;
+}
+
+async function sendOwnerLog(actionTitle, fields = [], adminUser) {
+  try {
+    const owner = await client.users.fetch(OWNER_ID);
+    if (!owner) return;
+
+    const logEmbed = createBotEmbed({
+      title: `🛡️ LOG ADMIN: ${actionTitle}`,
+      description: `Thao tác được thực hiện bởi Admin: **${adminUser.tag}** (ID: \`${adminUser.id}\`)`,
+      fields: [
+        ...fields,
+        { name: '⏰ Thời gian', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
+      ],
+      color: COLORS.OWNER,
+      user: adminUser
+    });
+
+    await owner.send({ embeds: [logEmbed] });
+  } catch (err) {
+    console.error('Không thể gửi Log về DM cho Owner:', err);
+  }
+}
+
+async function autoScanAndCleanExpiredKeys() {
+  const now = Date.now();
+  const allAccess = await AccessModel.find({});
+
+  for (const userData of allAccess) {
+    if (userData.expiresAt !== -1 && Number.isFinite(userData.expiresAt) && now >= userData.expiresAt) {
+      try {
+        const user = await client.users.fetch(userData.userId);
+        await user.send({
+          embeds: [
+            createBotEmbed({
+              title: '⏰ Thông Báo Hết Hạn Key',
+              description: 'Thời hạn sử dụng bot của bạn đã hết. Quyền truy cập bot đã tự động bị thu hồi!',
+              user,
+              color: COLORS.ERROR
+            })
+          ]
+        });
+      } catch (_e) {}
+
+      await AccessModel.deleteOne({ userId: userData.userId });
+      continue;
+    }
+  }
+}
+
+setInterval(autoScanAndCleanExpiredKeys, 30000);
+
+const commands = [
+  new SlashCommandBuilder()
+    .setName('getclonepre')
+    .setDescription('Lấy đường dẫn tải bản Clone Roblox Premium (Yêu cầu Key)')
+    .addStringOption(option =>
+      option.setName('region')
+        .setDescription('Chọn khu vực máy chủ')
+        .setRequired(true)
+        .addChoices(
+          { name: '🌍 Global', value: 'global' },
+          { name: '🇻🇳 VNG', value: 'vng' }
+        )),
+
+  new SlashCommandBuilder()
+    .setName('getclonefree')
+    .setDescription('Lấy đường dẫn tải bản Clone Roblox Miễn Phí')
+    .addStringOption(option =>
+      option.setName('region')
+        .setDescription('Chọn khu vực máy chủ')
+        .setRequired(true)
+        .addChoices(
+          { name: '🌍 Global', value: 'global' },
+          { name: '🇻🇳 VNG', value: 'vng' }
+        )),
+
+  new SlashCommandBuilder()
+    .setName('setadmin')
+    .setDescription('Quản lý quyền Admin Bot (Thêm hoặc Xóa)')
+    .addStringOption(option =>
+      option.setName('action')
+        .setDescription('Chọn hành động')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Add (Thêm Admin)', value: 'add' },
+          { name: 'Remove (Xóa Admin)', value: 'remove' }
+        )
+    )
+    .addUserOption(option => option.setName('user').setDescription('Chọn người dùng').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('createkey')
+    .setDescription('Tạo key mới')
+    .addStringOption(option =>
+      option.setName('duration')
+        .setDescription('Thời hạn của key')
+        .setRequired(true)
+        .addChoices(
+          { name: '1 Ngày', value: '1d' },
+          { name: '3 Ngày', value: '3d' },
+          { name: '7 Ngày', value: '7d' },
+          { name: '30 Ngày', value: '30d' },
+          { name: 'Vĩnh viễn', value: 'permanent' }
+        )
+    )
+    .addUserOption(option => option
+      .setName('target_user')
+      .setDescription('Member nhận key (không bắt buộc)')
+      .setRequired(false)),
+    
+  new SlashCommandBuilder()
+    .setName('setlinkclone')
+    .setDescription('Tải và thiết lập link + phiên bản cho từng mục')
+    .addStringOption(opt => opt.setName('type').setDescription('Loại bản Clone (Free hoặc Premium)').setRequired(true).addChoices(
+      { name: '🎁 Free', value: 'free' },
+      { name: '👑 Premium', value: 'premium' }
+    ))
+    .addStringOption(opt => opt.setName('category').setDescription('Tên mục (VD: Delta X)').setRequired(true))
+    .addStringOption(opt => opt.setName('region').setDescription('Khu vực').setRequired(true).addChoices({ name: 'Global', value: 'global' }, { name: 'VNG', value: 'vng' }))
+    .addStringOption(opt => opt.setName('link').setDescription('Đường link tải').setRequired(true))
+    .addStringOption(opt => opt.setName('status').setDescription('Trạng thái').setRequired(true).addChoices(
+      { name: '🟢 Hoạt động', value: 'active' },
+      { name: '🟡 Đang bảo trì / Chờ update', value: 'maintenance' },
+      { name: '🔴 Ngừng hoạt động', value: 'disabled' }
+    ))
+    .addStringOption(opt => opt.setName('version').setDescription('Phiên bản (VD: v2.640)').setRequired(false))
+    .addStringOption(opt => opt.setName('note').setDescription('Ghi chú / Tính năng').setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('setstatus')
+    .setDescription('Chọn bản Clone và khu vực để cập nhật trạng thái'),
+
+  new SlashCommandBuilder()
+    .setName('removelink')
+    .setDescription('Xóa bản Clone theo khu vực hoặc toàn bộ dữ liệu'),
+
+  new SlashCommandBuilder()
+    .setName('redeemkey')
+    .setDescription('Nhập key để kích hoạt')
+    .addStringOption(option => option.setName('key').setDescription('Nhập mã key').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('status')
+    .setDescription('Kiểm tra thời hạn sử dụng bot còn lại của bạn'),
+
+  new SlashCommandBuilder()
+    .setName('removekey')
+    .setDescription('Xóa key và thu hồi quyền của member')
+    .addStringOption(option => option.setName('key').setDescription('Key cần xóa').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Hướng dẫn sử dụng bot'),
+
+  new SlashCommandBuilder()
+    .setName('notification')
+    .setDescription('Gửi thông báo đến các member đã sử dụng bot')
+    .addStringOption(option => option
+      .setName('message')
+      .setDescription('Nội dung thông báo muốn gửi')
+      .setRequired(true)
+      .setMaxLength(2000)),
+
+  new SlashCommandBuilder()
+    .setName('token')
+    .setDescription('Lấy Token đăng nhập Website (đăng nhập là không bắt buộc)')
+    .addBooleanOption(option => option
+      .setName('reset')
+      .setDescription('Đặt true để reset và tạo Token mới')
+      .setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('2fa')
+    .setDescription('Lấy mã 2FA (6 ký tự, hết hạn sau 5 phút) để hoàn tất đăng nhập Website')
+].map(command => command.toJSON());
+
+const rest = new REST({ version: '10' }).setToken(TOKEN);
+
+(async () => {
+  try {
+    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+    console.log('✅ Registered Slash Commands successfully!');
+  } catch (error) {
+    console.error(error);
+  }
+})();
+
+function generateRandomKey() {
+  const randomDigits = Math.floor(100000 + Math.random() * 900000);
+  return `pain_${randomDigits}`;
+}
+
+const TOKEN_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+function generateLoginToken() {
+  let random = '';
+  for (let i = 0; i < 20; i++) {
+    random += TOKEN_CHARS[crypto.randomInt(0, TOKEN_CHARS.length)];
+  }
+  return `pain_${random}`;
+}
+
+const TWOFA_TTL_MS = 5 * 60 * 1000;
+const TWOFA_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+function generate2FACode() {
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += TWOFA_CHARS[crypto.randomInt(0, TWOFA_CHARS.length)];
+  }
+  return code;
+}
+
+const SESSION_TTL_MS = 4 * 24 * 60 * 60 * 1000;
+function generateSessionId() {
+  return crypto.randomBytes(24).toString('hex');
+}
+function isSessionValid(authDoc, sessionId) {
+  if (!authDoc || !sessionId || !authDoc.sessionId) return false;
+  if (authDoc.sessionId !== sessionId) return false;
+  if (!authDoc.sessionCreatedAt || Date.now() - authDoc.sessionCreatedAt > SESSION_TTL_MS) return false;
+  return true;
+}
+
+async function isBotAdmin(userId) {
+  if (userId === OWNER_ID) return true;
+  const admin = await AdminModel.findOne({ userId });
+  return !!admin;
+}
+
+async function rememberUser(userId) {
+  await UserModel.updateOne({ userId }, { userId }, { upsert: true });
+}
+
+function formatExpiry(expireTimestamp) {
+  if (expireTimestamp === -1) return 'Vĩnh viễn';
+  if (expireTimestamp == null) return 'Chưa kích hoạt';
+  return `<t:${Math.floor(expireTimestamp / 1000)}:R>`;
+}
+
+function getDurationMilliseconds(duration) {
+  if (duration === '1d') return 1 * 24 * 60 * 60 * 1000;
+  if (duration === '3d') return 3 * 24 * 60 * 60 * 1000;
+  if (duration === '7d') return 7 * 24 * 60 * 60 * 1000;
+  if (duration === '30d') return 30 * 24 * 60 * 60 * 1000;
+  if (duration === 'permanent') return -1;
+  return null;
+}
+
+function formatDuration(durationMs) {
+  if (durationMs === -1) return 'Vĩnh viễn kể từ lúc redeem';
+  if (durationMs == null) return 'Theo thời hạn cũ của key';
+  const durationDays = durationMs / (24 * 60 * 60 * 1000);
+  return `${durationDays} ngày kể từ lúc redeem`;
+}
+
+async function getValidAccessKey(userId) {
+  const userData = await AccessModel.findOne({ userId });
+  if (!userData) return null;
+
+  const now = Date.now();
+  if (userData.expiresAt !== -1 && Number.isFinite(userData.expiresAt) && now >= userData.expiresAt) {
+    await AccessModel.deleteOne({ userId });
+    return null;
+  }
+
+  return userData;
+}
+
+client.on('interactionCreate', async interaction => {
+  if (!interaction.guildId) {
+    return await interaction.reply({
+      embeds: [createBotEmbed({
+        title: '⛔ KHÔNG THỂ SỬ DỤNG TRONG DM',
+        description: `Vui lòng tham gia **Server Chính Thức** để sử dụng tính năng!\n\n👉 [**[ BẤM VÀO ĐÂY ĐỂ VÀO SERVER ]**](${SERVER_INVITE_LINK})`,
+        color: COLORS.ERROR
+      })],
+      ephemeral: true
+    });
+  }
+
+  if (interaction.guildId !== MAIN_SERVER_ID) {
+    return await interaction.reply({
+      embeds: [createBotEmbed({
+        title: '🏰 MÁY CHỦ BẢO HỘ',
+        description: `Bot chỉ hỗ trợ hoạt động tại **Server Chính Thức (Nhà Của Bot)**.\n\n👉 [**[ BẤM VÀO ĐÂY ĐỂ VỀ SERVER NHÀ ]**](${SERVER_INVITE_LINK})`,
+        color: COLORS.ERROR
+      })],
+      ephemeral: true
+    });
+  }
+
+  const userId = interaction.user.id;
+  const userLocale = interaction.locale || 'vi';
+
+  if (userId !== OWNER_ID) {
+    const now = Date.now();
+    const lastInteractionAt = commandCooldowns.get(userId);
+
+    if (lastInteractionAt && now - lastInteractionAt < COMMAND_COOLDOWN_MS) {
+      const remainingTime = Math.ceil((COMMAND_COOLDOWN_MS - (now - lastInteractionAt)) / 1000);
+      return await interaction.reply({
+        embeds: [
+          createBotEmbed({
+            title: '⚠️ Anti-Spam System',
+            description: `Bạn đang thao tác quá nhanh, vui lòng đợi **${remainingTime}s** nữa để sử dụng lại lệnh!`,
+            user: interaction.user,
+            locale: userLocale,
+            color: COLORS.OWNER
+          })
+        ],
+        ephemeral: true
+      });
+    }
+
+    commandCooldowns.set(userId, now);
+  }
+
+  await rememberUser(interaction.user.id);
+
+  if (interaction.isChatInputCommand()) {
+    const { commandName } = interaction;
+
+    if (commandName === 'getclonepre') {
+      if (!(await getValidAccessKey(interaction.user.id))) {
+        return await interaction.reply({
+          embeds: [createBotEmbed({
+            title: '🔒 Truy Cập Bị Khóa',
+            description: 'Bạn chưa kích hoạt key hoặc key đã hết hạn! Dùng `/redeemkey` để kích hoạt.',
+            color: COLORS.ERROR
+          })],
+          ephemeral: true
+        });
+      }
+
+      const region = interaction.options.getString('region', true);
+      const allLinks = await LinkModel.find({});
+      
+      const filteredLinks = allLinks.filter(item => {
+        return item.links && item.links.premium && item.links.premium[region] && item.links.premium[region].url;
+      });
+
+      if (filteredLinks.length === 0) {
+        return await interaction.reply({
+          embeds: [createBotEmbed({
+            title: '❌ Thao Tác Thất Bại',
+            description: `Hiện chưa có bản Clone Premium nào khả dụng cho khu vực **${region.toUpperCase()}**!`,
+            color: COLORS.ERROR
+          })],
+          ephemeral: true
+        });
+      }
+
+      const options = filteredLinks.map(item => {
+        const data = item.links.premium[region];
+        const vText = data.version || 'v1.0';
+        return {
+          label: `${item.category} [${vText}]`,
+          description: `Phiên bản: ${vText} -${data.note || 'Không có ghi chú'}`.slice(0, 100),
+          value: JSON.stringify({ cat: item.category, reg: region })
+        };
+      });
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('user_select_clone_pre_category')
+        .setPlaceholder(`--- Chọn bản Clone Premium (${region.toUpperCase()}) ---`)
+        .addOptions(options.slice(0, 25));
+
+      return await interaction.reply({
+        embeds: [createBotEmbed({
+          title: `👇 DANH SÁCH CLONE PREMIUM (${region.toUpperCase()})`,
+          description: `Vui lòng chọn mục Clone bạn muốn lấy link từ menu bên dưới:`,
+          color: COLORS.DEFAULT
+        })],
+        components: [new ActionRowBuilder().addComponents(selectMenu)],
+        ephemeral: true
+      });
+    }
+
+    if (commandName === 'getclonefree') {
+      const region = interaction.options.getString('region', true);
+      const allLinks = await LinkModel.find({});
+      
+      const filteredLinks = allLinks.filter(item => {
+        return item.links && item.links.free && item.links.free[region] && item.links.free[region].url;
+      });
+
+      if (filteredLinks.length === 0) {
+        return await interaction.reply({
+          embeds: [createBotEmbed({
+            title: '❌ Thao Tác Thất Bại',
+            description: `Hiện chưa có bản Clone Miễn Phí nào khả dụng cho khu vực **${region.toUpperCase()}**!`,
+            color: COLORS.ERROR
+          })],
+          ephemeral: true
+        });
+      }
+
+      const options = filteredLinks.map(item => {
+        const data = item.links.free[region];
+        const vText = data.version || 'v1.0';
+        return {
+          label: `${item.category} [${vText}]`,
+          description: `Phiên bản: ${vText} -${data.note || 'Không có ghi chú'}`.slice(0, 100),
+          value: JSON.stringify({ cat: item.category, reg: region })
+        };
+      });
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('user_select_clone_free_category')
+        .setPlaceholder(`--- Chọn bản Clone Miễn Phí (${region.toUpperCase()}) ---`)
+        .addOptions(options.slice(0, 25));
+
+      return await interaction.reply({
+        embeds: [createBotEmbed({
+          title: `🎁 DANH SÁCH CLONE MIỄN PHÍ (${region.toUpperCase()})`,
+          description: `Vui lòng chọn mục Clone Miễn Phí bạn muốn lấy link từ menu bên dưới:`,
+          color: COLORS.MEMBER
+        })],
+        components: [new ActionRowBuilder().addComponents(selectMenu)],
+        ephemeral: true
+      });
+    }
+
+    if (commandName === 'setstatus') {
+      if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
+
+      const allLinks = await LinkModel.find({});
+      if (allLinks.length === 0) {
+        return await interaction.reply({
+          embeds: [createBotEmbed({
+            title: '❌ Thao tác thất bại',
+            description: 'Hiện chưa có bản Clone nào được thiết lập trong hệ thống!',
+            color: COLORS.ERROR
+          })],
+          ephemeral: true
+        });
+      }
+
+      const options = allLinks.map(item => ({
+        label: item.category,
+        description: `Mục: ${item.category}`,
+        value: JSON.stringify({ cat: item.category })
+      }));
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('admin_select_setstatus_category')
+        .setPlaceholder('--- Chọn mục Clone muốn cập nhật trạng thái ---')
+        .addOptions(options.slice(0, 25));
+
+      return await interaction.reply({
+        embeds: [createBotEmbed({
+          title: '⚙️ CẬP NHẬT TRẠNG THÁI CLONE',
+          description: 'Vui lòng chọn mục Clone bạn muốn thay đổi trạng thái:',
+          color: COLORS.ADMIN
+        })],
+        components: [new ActionRowBuilder().addComponents(selectMenu)],
+        ephemeral: true
+      });
+    }
+
+    if (commandName === 'removelink') {
+      if (!(await isBotAdmin(interaction.user.id))) return await interaction.reply({ content: '❌ Không đủ quyền!', ephemeral: true });
 
       const allLinks = await LinkModel.find({});
       if (allLinks.length === 0) {
@@ -353,7 +916,6 @@ eral: true });
       linkDoc.markModified('links');
       await linkDoc.save();
 
-      // GỬI LOG VỀ OWNER
       await sendOwnerLog('Cập Nhật Link Clone', [
         { name: 'Mục', value: category, inline: true },
         { name: 'Loại', value: type.toUpperCase(), inline: true },
@@ -443,7 +1005,6 @@ eral: true });
         }
       }
 
-      // GỬI LOG VỀ OWNER
       await sendOwnerLog('Tạo Key Mới', [
         { name: 'Mã Key', value: generatedKey, inline: true },
         { name: 'Thời hạn', value: durationText, inline: true },
@@ -895,19 +1456,12 @@ eral: true });
   }
 });
 
-/* =========================================================
-   API WEBSITE — LIÊN KẾT index.html VỚI BOT (index.js)
-   Website gọi các endpoint dưới đây để đăng nhập bằng Token + 2FA
-   ========================================================= */
 const app = express();
-// Railway chạy sau proxy: cần để lấy đúng IP người dùng
 app.set('trust proxy', 1);
 
-// Chỉ cho đúng website của bạn gọi API (thêm tên miền riêng vào mảng nếu sau này có)
 const ALLOWED_ORIGINS = ['https://paintool-website-tai-hack-roblox.onrender.com'];
 app.use(cors({ origin: ALLOWED_ORIGINS }));
 
-// Giới hạn số lần gọi API đăng nhập theo IP (không cần cài thêm package)
 const RATE_WINDOW_MS = 5 * 60 * 1000;
 const RATE_MAX_REQUESTS = 30;
 const rateHits = new Map();
@@ -929,7 +1483,6 @@ setInterval(() => {
   for (const [ip, entry] of rateHits) if (now > entry.resetAt) rateHits.delete(ip);
 }, 10 * 60 * 1000);
 
-// Đếm số lần nhập sai mã 2FA theo token: sai 5 lần thì mã 2FA hiện tại bị hủy
 const MAX_2FA_FAILS = 5;
 const twoFAFails = new Map();
 
@@ -943,7 +1496,6 @@ function buildPublicUser(discordUser) {
   };
 }
 
-// Bước 1: kiểm tra Token (chưa cấp quyền đăng nhập, chỉ xác nhận Token đúng)
 app.post('/api/login/token', loginRateLimit, async (req, res) => {
   try {
     const { token } = req.body || {};
@@ -969,7 +1521,6 @@ app.post('/api/login/token', loginRateLimit, async (req, res) => {
   }
 });
 
-// Bước 2: kiểm tra mã 2FA, nếu đúng thì trả về thông tin Discord đầy đủ để website lưu phiên đăng nhập
 app.post('/api/login/2fa', loginRateLimit, async (req, res) => {
   try {
     const { token, code } = req.body || {};
@@ -1000,10 +1551,8 @@ app.post('/api/login/2fa', loginRateLimit, async (req, res) => {
     }
     twoFAFails.delete(token);
 
-    // Mã 2FA chỉ dùng được 1 lần
     authDoc.twoFACode = undefined;
     authDoc.twoFACodeExpiresAt = undefined;
-    // Tạo phiên mới: phiên cũ ở thiết bị khác sẽ tự bị đăng xuất
     authDoc.sessionId = generateSessionId();
     authDoc.sessionCreatedAt = Date.now();
     await authDoc.save();
@@ -1024,7 +1573,6 @@ app.post('/api/login/2fa', loginRateLimit, async (req, res) => {
   }
 });
 
-// Lấy lại thông tin Discord mới nhất cho phiên đăng nhập đã lưu ở trình duyệt (mở khung "Thông tin")
 app.post('/api/session/profile', loginRateLimit, async (req, res) => {
   try {
     const { token, sessionId } = req.body || {};
@@ -1044,7 +1592,6 @@ app.post('/api/session/profile', loginRateLimit, async (req, res) => {
   }
 });
 
-// Website gọi định kỳ để kiểm tra phiên: hết hạn 4 ngày / đăng nhập nơi khác / token bị reset
 app.post('/api/session/check', loginRateLimit, async (req, res) => {
   try {
     const { token, sessionId } = req.body || {};
@@ -1066,6 +1613,10 @@ app.post('/api/session/check', loginRateLimit, async (req, res) => {
 /* =========================================================
    HEALTH CHECK ENDPOINT - CHO UPTIMEROBOT KIỂM TRA MÁY CHỦ
    ========================================================= */
+app.get('/', (req, res) => {
+  res.status(200).send('Bot Server is LIVE and Running!');
+});
+
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK', 
